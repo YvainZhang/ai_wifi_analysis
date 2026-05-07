@@ -85,60 +85,60 @@
   <path d="M 672 272 L 672 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
   <path d="M 852 272 L 852 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
   <path d="M 1042 272 L 1042 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
-  <rect x="30" y="295" width="1140" height="90" rx="8" fill="#faf5ff" stroke="#ede9fe" stroke-width="1.2" stroke-dasharray="6,3"/>
+  <rect x="30" y="295" width="1140" height="120" rx="8" fill="#faf5ff" stroke="#ede9fe" stroke-width="1.2" stroke-dasharray="6,3"/>
   <text x="50" y="313" font-size="10" fill="#9333ea" font-weight="600">LAYER 4 · AUTO ISSUE DETECTION (detect_*_issues)</text>
-  <rect x="80" y="306" width="200" height="12" rx="3" fill="#fef2f2" stroke="#fca5a5" stroke-width="0.8"/>
-  <text x="180" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#dc2626">Connectivity</text>
-  <rect x="288" y="306" width="200" height="12" rx="3" fill="#eff6ff" stroke="#93c5fd" stroke-width="0.8"/>
-  <text x="388" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#2563eb">Network Access</text>
-  <rect x="496" y="306" width="200" height="12" rx="3" fill="#f0fdf4" stroke="#86efac" stroke-width="0.8"/>
-  <text x="596" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#16a34a">Performance</text>
-  <rect x="704" y="306" width="200" height="12" rx="3" fill="#faf5ff" stroke="#c4b5fd" stroke-width="0.8"/>
-  <text x="804" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#9333ea">Protocol</text>
-  <rect x="912" y="306" width="200" height="12" rx="3" fill="#fff7ed" stroke="#fdba74" stroke-width="0.8"/>
-  <text x="1012" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#ea580c">RF Quality</text>
+  <rect x="820" y="303" width="340" height="14" rx="3" fill="#eff6ff" stroke="#93c5fd" stroke-width="0.8"/>
+  <text x="825" y="313" font-size="8" font-weight="600" fill="#2563eb">Connectivity (top)</text>
+  <rect x="820" y="319" width="340" height="14" rx="3" fill="#faf5ff" stroke="#c4b5fd" stroke-width="0.8"/>
+  <text x="825" y="329" font-size="8" font-weight="600" fill="#9333ea">Protocol / BA</text>
+  <rect x="820" y="335" width="340" height="14" rx="3" fill="#f0fdf4" stroke="#86efac" stroke-width="0.8"/>
+  <text x="825" y="345" font-size="8" font-weight="600" fill="#16a34a">Frame Quality</text>
+  <rect x="820" y="351" width="340" height="14" rx="3" fill="#fff7ed" stroke="#fdba74" stroke-width="0.8"/>
+  <text x="825" y="361" font-size="8" font-weight="600" fill="#ea580c">RF Quality (bottom)</text>
+  <line x1="806" y1="358" x2="806" y2="310" stroke="#6b7280" stroke-width="1" marker-end="url(#ay)"/>
+  <text x="804" y="337" text-anchor="end" font-size="7" fill="#6b7280" transform="rotate(-90,804,334)">Causes ↑</text>
   <g filter="url(#sh)">
-    <rect x="80" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="185" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Block Ack Issues</text>
-    <text x="88" y="349" font-size="8.5" fill="#6b7280">DELBA storm &gt;5/s</text>
-    <text x="88" y="359" font-size="8.5" fill="#6b7280">BA cycle &lt;2s</text>
-    <text x="88" y="369" font-size="8.5" fill="#6b7280">TID mismatch·ADDBA fail</text>
+    <rect x="80" y="335" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="185" y="351" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Block Ack Issues</text>
+    <text x="88" y="364" font-size="8.5" fill="#6b7280">DELBA storm &gt;5/s</text>
+    <text x="88" y="374" font-size="8.5" fill="#6b7280">BA cycle &lt;2s</text>
+    <text x="88" y="384" font-size="8.5" fill="#6b7280">TID mismatch·ADDBA fail</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="295" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="400" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Disconnect Issues</text>
-    <text x="303" y="349" font-size="8.5" fill="#6b7280">Frequent disconnect &gt;3</text>
-    <text x="303" y="359" font-size="8.5" fill="#6b7280">Deauth / Disassoc</text>
-    <text x="303" y="369" font-size="8.5" fill="#6b7280">Reason Code attribution</text>
+    <rect x="295" y="335" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="400" y="351" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Disconnect Issues</text>
+    <text x="303" y="364" font-size="8.5" fill="#6b7280">Frequent disconnect &gt;3</text>
+    <text x="303" y="374" font-size="8.5" fill="#6b7280">Deauth / Disassoc</text>
+    <text x="303" y="384" font-size="8.5" fill="#6b7280">Reason Code attribution</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="510" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="615" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Frame Quality Issues</text>
-    <text x="518" y="349" font-size="8.5" fill="#6b7280">Weak signal &lt;-70dBm</text>
-    <text x="518" y="359" font-size="8.5" fill="#6b7280">Sudden drop &gt;15dBm</text>
-    <text x="518" y="369" font-size="8.5" fill="#6b7280">Retransmit &gt;5% MEDIUM</text>
-    <text x="518" y="379" font-size="8.5" fill="#6b7280">Retransmit &gt;15% HIGH</text>
+    <rect x="510" y="335" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="615" y="351" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Frame Quality</text>
+    <text x="518" y="364" font-size="8.5" fill="#6b7280">Weak signal &lt;-70dBm</text>
+    <text x="518" y="374" font-size="8.5" fill="#6b7280">Sudden drop &gt;15dBm</text>
+    <text x="518" y="384" font-size="8.5" fill="#6b7280">Retransmit &gt;5% MEDIUM</text>
+    <text x="518" y="394" font-size="8.5" fill="#6b7280">Retransmit &gt;15% HIGH</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="725" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="830" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">DHCP Issues</text>
-    <text x="733" y="349" font-size="8.5" fill="#6b7280">NAK · No Offer</text>
-    <text x="733" y="359" font-size="8.5" fill="#6b7280">Request NAKed</text>
-    <text x="733" y="369" font-size="8.5" fill="#6b7280">Multi-round DORA·Retransmit</text>
+    <rect x="725" y="335" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="830" y="351" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">DHCP Issues</text>
+    <text x="733" y="364" font-size="8.5" fill="#6b7280">NAK · No Offer</text>
+    <text x="733" y="374" font-size="8.5" fill="#6b7280">Request NAKed</text>
+    <text x="733" y="384" font-size="8.5" fill="#6b7280">Multi-round DORA·Retransmit</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="940" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="1045" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Frame Stats Anomaly</text>
-    <text x="948" y="349" font-size="8.5" fill="#6b7280">High RTS/CTS ratio</text>
-    <text x="948" y="359" font-size="8.5" fill="#6b7280">Low QoS Data ratio</text>
-    <text x="948" y="369" font-size="8.5" fill="#6b7280">High Null frame ratio</text>
-    <text x="948" y="379" font-size="8.5" fill="#6b7280">High mgmt overhead</text>
+    <rect x="940" y="335" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="1045" y="351" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Frame Stats Anomaly</text>
+    <text x="948" y="364" font-size="8.5" fill="#6b7280">High RTS/CTS ratio</text>
+    <text x="948" y="374" font-size="8.5" fill="#6b7280">Low QoS Data ratio</text>
+    <text x="948" y="384" font-size="8.5" fill="#6b7280">High Null frame ratio</text>
+    <text x="948" y="394" font-size="8.5" fill="#6b7280">High mgmt overhead</text>
   </g>
-  <path d="M 185 375 L 185 402" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
-  <path d="M 415 375 L 415 402" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
-  <path d="M 645 375 L 645 402" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
-  <path d="M 875 375 L 875 402" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
-  <path d="M 1095 375 L 1095 402" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
+  <path d="M 185 405 L 185 420" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
+  <path d="M 400 405 L 400 420" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
+  <path d="M 615 405 L 615 420" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
+  <path d="M 830 405 L 830 420" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
+  <path d="M 1045 405 L 1045 420" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
   <rect x="30" y="398" width="1140" height="245" rx="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1.2" stroke-dasharray="6,3"/>
   <text x="50" y="416" font-size="10" fill="#dc2626" font-weight="600">LAYER 5 · ANALYSIS FRAMEWORK (AI + Manual, 6 Dimensions)</text>
   <g filter="url(#sh)">
