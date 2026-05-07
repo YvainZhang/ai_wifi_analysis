@@ -144,7 +144,7 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 | **L3 Data Extraction** | Unified Result Dict | Frame statistics (all subtypes), BA events, disconnect/assoc, DHCP interactions, signal data, retransmit stats |
 | **L4 Auto Detection** | `detect_*_issues()` automatic anomaly detection | BA storm/cycle, frequent disconnection, weak signal/high retransmit, DHCP NAK/multi-round |
 | **L5 Analysis Framework** | AI + Manual 6-dimension analysis | A.Connection Flow B.Frame Quality (must-check: retransmit/signal/aggregation/**control frames RTS-CTS-ACK**) C.Block Ack D.DHCP E.Air Efficiency **F.Hardware Metrics** |
-| **L6 Root Cause** | Cross-layer causal chain reconstruction | Layered attribution, causal chain building, cross-validation, issue attribution, troubleshooting recommendations |
+| **L6 Root Cause** | Cross-layer causal chain reconstruction (bottom-up: RF→Frame→Protocol→Connectivity) | Layered attribution, causal chain building, cross-validation, issue ownership, recommendations |
 
 ### Analysis Dimensions Overview
 
@@ -161,24 +161,27 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 | **Air Efficiency** | Data frame ratio, management/control frame overhead, effective throughput estimation | analyze.py |
 | **Hardware Metrics** | Signal histogram, 5-second window stability, noise floor, retransmit frame signal comparison, rate distribution, antenna distribution, per-second trend | hw_metrics.py |
 
-### Auto Detection Thresholds (Grouped by Domain)
+### Auto Detection Thresholds (Layered — Bottom-Up Root Cause)
 
-| Domain | Detection | Condition | Severity |
-|--------|-----------|-----------|----------|
-| **Connectivity** | Frequent Disconnect | Deauth + Disassociation >3 times | HIGH |
-| **Network Access** | DHCP NAK | AP rejects IP allocation | HIGH/MEDIUM |
-| **Network Access** | DHCP No Response | Discover without Offer | HIGH |
-| **Network Access** | DHCP Multi-round | >1 round of DORA interaction | HIGH |
-| **Network Access** | DHCP Request NAKed | Request received NAK instead of ACK | HIGH |
-| **Performance** | BA Storm | >5 DELBAs in 1 second | HIGH |
-| **Performance** | BA Cycle | DELBA→ADDBA interval <2s, ≥3 times | HIGH |
-| **Performance** | High Retransmit Rate | >15% HIGH, 5%~15% MEDIUM | HIGH/MEDIUM |
-| **Protocol** | ADDBA Failure | ADDBA Response returns failure status | MEDIUM |
-| **Protocol** | TID Mismatch | DELBA and ADDBA TID inconsistency | MEDIUM |
-| **Protocol** | DELBA Reason Analysis | Same reason code appears >3 times | INFO |
-| **Protocol** | DELBA Direction | All DELBAs from Recipient side | INFO |
-| **RF Quality** | Weak Signal | < -70 dBm | MEDIUM |
-| **RF Quality** | Signal Sudden Drop | Drop >15 dBm | INFO |
+Issues are organized by causal layer. Lower layers are root causes that propagate upward.
+
+| Layer | Domain | Detection | Condition | Severity |
+|-------|--------|-----------|-----------|----------|
+| 1 (bottom) | **RF Quality** | Weak Signal | < -70 dBm | MEDIUM |
+| 1 | **RF Quality** | Signal Sudden Drop | Drop >15 dBm | INFO |
+| 2 | **Frame Quality** | High Retransmit Rate | >15% HIGH, 5%~15% MEDIUM | HIGH/MEDIUM |
+| 3 | **Protocol / BA** | BA Storm | >5 DELBAs in 1 second | HIGH |
+| 3 | **Protocol / BA** | BA Cycle | DELBA→ADDBA interval <2s, ≥3 times | HIGH |
+| 3 | **Protocol / BA** | ADDBA Failure | ADDBA Response returns failure status | MEDIUM |
+| 3 | **Protocol / BA** | TID Mismatch | DELBA and ADDBA TID inconsistency | MEDIUM |
+| 3 | **Protocol / BA** | DELBA Reason | Same reason code appears >3 times | INFO |
+| 3 | **Protocol / BA** | DELBA Direction | All DELBAs from same side | INFO |
+| 4 (top) | **Connectivity** | Frequent Disconnect | Deauth + Disassociation >3 times | HIGH |
+| 4 | **Connectivity** | Disconnect Reason | Reason code analysis | INFO |
+| 4 | **Connectivity** | DHCP NAK | AP rejects IP allocation | HIGH/MEDIUM |
+| 4 | **Connectivity** | DHCP No Response | Discover without Offer | HIGH |
+| 4 | **Connectivity** | DHCP Multi-round | >1 round of DORA interaction | HIGH |
+| 4 | **Connectivity** | DHCP Request NAKed | Request received NAK instead of ACK | HIGH |
 
 ### Typical Causal Chain
 

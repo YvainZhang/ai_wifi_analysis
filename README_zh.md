@@ -159,24 +159,27 @@ python3 wifi_analyzer.py <目录> --type ba
 | **空口效率** | 数据帧占比、管理帧/控制帧开销、有效吞吐估算 | analyze.py |
 | **硬件指标** | 信号直方图、5秒窗口稳定性、噪声底噪、重传帧信号对比、速率分布、天线分布、每秒趋势 | hw_metrics.py |
 
-### 自动检测阈值（按问题域分组）
+### 自动检测阈值（因果层级 — 自底向上排查）
 
-| 问题域 | 检测项 | 条件 | 严重度 |
-|--------|--------|------|--------|
-| **连接性** | 频繁断连 | Deauth + Disassoc >3 次 | HIGH |
-| **网络接入** | DHCP NAK | AP 拒绝分配 | HIGH/MEDIUM |
-| **网络接入** | DHCP 无响应 | Discover 未收到 Offer | HIGH |
-| **网络接入** | DHCP 多轮 | >1 轮 DORA 交互 | HIGH |
-| **网络接入** | DHCP Request被NAK | Request 收到 NAK 而非 ACK | HIGH |
-| **性能** | BA 风暴 | 1 秒内 >5 个 DELBA | HIGH |
-| **性能** | BA 循环 | DELBA→ADDBA 间隔 <2s，≥3 次 | HIGH |
-| **性能** | 高重传率 | >15% HIGH，5%~15% MEDIUM | HIGH/MEDIUM |
-| **协议** | ADDBA 失败 | ADDBA Response 返回失败状态 | MEDIUM |
-| **协议** | TID 不匹配 | DELBA 与 ADDBA 的 TID 不一致 | MEDIUM |
-| **协议** | DELBA Reason 分析 | 同一 reason code 出现 >3 次 | INFO |
-| **协议** | DELBA 方向 | 所有 DELBA 由同一侧发起 | INFO |
-| **射频质量** | 弱信号 | < -70 dBm | MEDIUM |
-| **射频质量** | 信号突变 | 突降 >15 dBm | INFO |
+问题按因果层级组织，下层是上层的根因，排查时从底层向上追溯。
+
+| 层级 | 域 | 检测项 | 条件 | 严重度 |
+|------|----|--------|------|--------|
+| 1 (底层) | **射频质量** | 弱信号 | < -70 dBm | MEDIUM |
+| 1 | **射频质量** | 信号突变 | 突降 >15 dBm | INFO |
+| 2 | **帧质量** | 高重传率 | >15% HIGH，5%~15% MEDIUM | HIGH/MEDIUM |
+| 3 | **协议/Block Ack** | BA 风暴 | 1 秒内 >5 个 DELBA | HIGH |
+| 3 | **协议/Block Ack** | BA 循环 | DELBA→ADDBA 间隔 <2s，≥3 次 | HIGH |
+| 3 | **协议/Block Ack** | ADDBA 失败 | ADDBA Response 返回失败状态 | MEDIUM |
+| 3 | **协议/Block Ack** | TID 不匹配 | DELBA 与 ADDBA 的 TID 不一致 | MEDIUM |
+| 3 | **协议/Block Ack** | DELBA Reason | 同一 reason code 出现 >3 次 | INFO |
+| 3 | **协议/Block Ack** | DELBA 方向 | 所有 DELBA 由同一侧发起 | INFO |
+| 4 (表层) | **连接性/网络接入** | 频繁断连 | Deauth + Disassoc >3 次 | HIGH |
+| 4 | **连接性/网络接入** | 断连 Reason | Reason code 分析 | INFO |
+| 4 | **连接性/网络接入** | DHCP NAK | AP 拒绝分配 | HIGH/MEDIUM |
+| 4 | **连接性/网络接入** | DHCP 无响应 | Discover 未收到 Offer | HIGH |
+| 4 | **连接性/网络接入** | DHCP 多轮 | >1 轮 DORA 交互 | HIGH |
+| 4 | **连接性/网络接入** | DHCP Request被NAK | Request 收到 NAK 而非 ACK | HIGH |
 
 ### 典型因果链
 

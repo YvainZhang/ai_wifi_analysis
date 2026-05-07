@@ -108,37 +108,38 @@ def identify_roles(frame_stats, ba_events, assoc_events):
     return ap_candidates, sta_candidates
 
 
-DOMAIN_LABELS = {
-    'connectivity': '连接性',
-    'network_access': '网络接入',
-    'performance': '性能',
-    'protocol': '协议',
-    'rf_quality': '射频质量',
-}
+ISSUE_LAYERS = [
+    ('rf_quality', '射频质量 (底层 — 影响上层所有问题)'),
+    ('frame_quality', '帧质量 (中层 — 重传/丢包)'),
+    ('protocol_ba', '协议/Block Ack (上层 — BA 管理/协议效率)'),
+    ('connectivity', '连接性/网络接入 (表层 — 用户可见现象)'),
+]
+
+DOMAIN_LABELS = {layer[0]: layer[1] for layer in ISSUE_LAYERS}
 
 def _domain_for(category):
     _CATEGORY_DOMAIN = {
-        '频繁断连': 'connectivity',
-        '断连 Reason': 'connectivity',
-        'DHCP 多轮交互': 'network_access',
-        'DHCP NAK': 'network_access',
-        'DHCP 无响应': 'network_access',
-        'DHCP Request 被 NAK': 'network_access',
-        'DHCP 重传': 'network_access',
-        'DHCP 客户端': 'network_access',
-        'DHCP 地址信息': 'network_access',
-        'BA Thrashing': 'performance',
-        'DELBA/ADDBA 循环': 'performance',
-        'DELBA 风暴': 'performance',
-        '高重传率': 'performance',
-        'TID 不匹配': 'protocol',
-        'ADDBA 失败': 'protocol',
-        'DELBA Reason 分析': 'protocol',
-        'DELBA 方向': 'protocol',
         '弱信号': 'rf_quality',
         '信号突变': 'rf_quality',
+        '高重传率': 'frame_quality',
+        'BA Thrashing': 'protocol_ba',
+        'DELBA/ADDBA 循环': 'protocol_ba',
+        'DELBA 风暴': 'protocol_ba',
+        'TID 不匹配': 'protocol_ba',
+        'ADDBA 失败': 'protocol_ba',
+        'DELBA Reason 分析': 'protocol_ba',
+        'DELBA 方向': 'protocol_ba',
+        '频繁断连': 'connectivity',
+        '断连 Reason': 'connectivity',
+        'DHCP 多轮交互': 'connectivity',
+        'DHCP NAK': 'connectivity',
+        'DHCP 无响应': 'connectivity',
+        'DHCP Request 被 NAK': 'connectivity',
+        'DHCP 重传': 'connectivity',
+        'DHCP 客户端': 'connectivity',
+        'DHCP 地址信息': 'connectivity',
     }
-    return _CATEGORY_DOMAIN.get(category, 'protocol')
+    return _CATEGORY_DOMAIN.get(category, 'protocol_ba')
 
 
 def detect_ba_issues(ba_events, duration):
@@ -537,15 +538,13 @@ def generate_report(result, problem_desc=None, brief=False):
         w('## 问题诊断')
         w()
         sev_order = {'HIGH': 0, 'MEDIUM': 1, 'INFO': 2}
-        domain_order = ['connectivity', 'network_access', 'performance', 'protocol', 'rf_quality']
         domain_groups = defaultdict(list)
         for iss in all_issues:
-            domain_groups[iss.get('domain', 'protocol')].append(iss)
-        for domain in domain_order:
+            domain_groups[iss.get('domain', 'protocol_ba')].append(iss)
+        for domain, domain_label in ISSUE_LAYERS:
             group = domain_groups.get(domain)
             if not group:
                 continue
-            domain_label = DOMAIN_LABELS.get(domain, domain)
             w('### %s' % domain_label)
             w()
             group.sort(key=lambda x: sev_order.get(x['severity'], 9))
@@ -741,15 +740,13 @@ def print_terminal_report(result, brief=False):
     if all_issues:
         print('%s问题诊断:%s' % (B, R))
         sev_color = {'HIGH': RED, 'MEDIUM': YEL, 'INFO': CYN}
-        domain_order = ['connectivity', 'network_access', 'performance', 'protocol', 'rf_quality']
         domain_groups = defaultdict(list)
         for iss in all_issues:
-            domain_groups[iss.get('domain', 'protocol')].append(iss)
-        for domain in domain_order:
+            domain_groups[iss.get('domain', 'protocol_ba')].append(iss)
+        for domain, domain_label in ISSUE_LAYERS:
             group = domain_groups.get(domain)
             if not group:
                 continue
-            domain_label = DOMAIN_LABELS.get(domain, domain)
             print('  %s--- %s ---%s' % (CYN, domain_label, R))
             sev_order = {'HIGH': 0, 'MEDIUM': 1, 'INFO': 2}
             group.sort(key=lambda x: sev_order.get(x['severity'], 9))
