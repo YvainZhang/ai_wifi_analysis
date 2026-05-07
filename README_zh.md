@@ -131,7 +131,7 @@ python3 wifi_analyzer.py <目录> --type ba
 
 ## 数据分析流程
 
-![WiFi 空口抓包数据分析流程](analysis-pipeline.png)
+![WiFi 空口抓包数据分析流程](analysis-pipeline_zh.png)
 
 分析流程分 6 层，从原始抓包到根因定位：
 

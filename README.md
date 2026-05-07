@@ -1,5 +1,7 @@
 # WiFi Analyzer — AI-Powered WiFi Packet Capture Analysis Tool
 
+> **[中文版 (Chinese Version)](README_zh.md)**
+
 One-click WiFi over-the-air capture analysis with automatic root cause diagnosis.
 
 Feed pcapng/OmniPeek capture files to AI, and it performs the complete analysis from data extraction to root cause identification: frame quality assessment, protocol flow analysis, timeline reconstruction, causal chain building, and troubleshooting recommendations.
