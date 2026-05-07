@@ -11,3 +11,5 @@ venv/
 .env
 .claude/settings.local.json
 .DS_Store
+AGENTS.md
+CLAUDE.md
