@@ -129,7 +129,42 @@ python3 wifi_analyzer.py <目录> --type ba
 
 可选但推荐：测试环境、测试场景、复现步骤、已知线索。
 
-## 架构
+## 数据分析流程
+
+![WiFi 空口抓包数据分析流程](analysis-pipeline.png)
+
+分析流程分 6 层，从原始抓包到根因定位：
+
+| 层级 | 说明 | 关键内容 |
+|------|------|----------|
+| **L1 原始抓包** | pcapng / pcap / OmniPeek .pkt | 含 Radiotap 头（信号、噪声、信道、速率） |
+| **L2 帧解码** | 802.11 MAC Header + Action Frame + DHCP | Radiotap 解析、MAC 帧、BA Action、DHCP Deep Parse |
+| **L3 数据提取** | 统一的 Result Dict | 帧统计、BA 事件、断连/关联事件、DHCP 交互、信号数据、重传统计 |
+| **L4 自动检测** | `detect_*_issues()` 自动发现异常 | BA 风暴/循环、频繁断连、弱信号/高重传、DHCP NAK/多轮交互 |
+| **L5 分析框架** | AI + 人工 5 维度分析 | A.连接流程 B.帧质量(必检) C.Block Ack D.DHCP E.空口效率 |
+| **L6 根因定位** | 跨层因果链重建 | 分层归因、因果链重建、问题归属、可能原因排序 |
+
+### 自动检测阈值
+
+| 检测项 | 条件 | 严重度 |
+|--------|------|--------|
+| BA 风暴 | 1 秒内 >5 个 DELBA | HIGH |
+| BA 循环 | DELBA→ADDBA 间隔 <2s，≥3 次 | HIGH |
+| 频繁断连 | Deauth + Disassoc >3 次 | HIGH |
+| 弱信号 | < -70 dBm | MEDIUM |
+| 信号突变 | 突降 >15 dBm | INFO |
+| 高重传率 | >15% HIGH，5%~15% MEDIUM | HIGH/MEDIUM |
+| DHCP NAK | AP 拒绝分配 | HIGH/MEDIUM |
+| DHCP 无响应 | Discover 未收到 Offer | HIGH |
+| DHCP 多轮 | >1 轮 DORA 交互 | HIGH |
+
+### 典型因果链
+
+```
+信号突变 → 重传飙升 → BA 窗口溢出 → DELBA → 吞吐归零 → Deauth
+```
+
+### 代码架构
 
 ```
 wifi_analyzer.py          CLI 入口，串联整个流程
@@ -140,13 +175,6 @@ wifi_analyzer.py          CLI 入口，串联整个流程
   ├── prompt_builder.py   分析方法论 + prompt 构建
   └── llm_client.py       通用 LLM API 客户端
 ```
-
-### 工作流程
-
-1. **数据提取** — Python 解析 pcapng/OmniPeek，提取帧统计、BA 事件、断连事件、DHCP 交互、信号强度、重传统计
-2. **问题检测** — 自动检测 BA 风暴、DHCP NAK、频繁断连、高重传、弱信号等问题
-3. **AI 分析** — 将提取数据和分析方法论发送给 LLM，AI 完成根因定位
-4. **报告输出** — 包含帧质量评估、协议流程、时序还原、因果链、排查建议
 
 ### 支持的抓包格式
 
