@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.pyo
+_extracted.md
+_filtered.md
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.env
+.claude/settings.local.json
+.DS_Store
