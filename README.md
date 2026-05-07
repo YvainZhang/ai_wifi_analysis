@@ -137,12 +137,27 @@ python3 wifi_analyzer.py <目录> --type ba
 
 | 层级 | 说明 | 关键内容 |
 |------|------|----------|
-| **L1 原始抓包** | pcapng / pcap / OmniPeek .pkt | 含 Radiotap 头（信号、噪声、信道、速率） |
-| **L2 帧解码** | 802.11 MAC Header + Action Frame + DHCP | Radiotap 解析、MAC 帧、BA Action、DHCP Deep Parse |
-| **L3 数据提取** | 统一的 Result Dict | 帧统计、BA 事件、断连/关联事件、DHCP 交互、信号数据、重传统计 |
+| **L1 原始抓包** | pcapng / pcap / OmniPeek .pkt | 含 Radiotap 头（信号、噪声、信道、速率、天线） |
+| **L2 帧解码** | 802.11 MAC Header + Control + DHCP | Radiotap 解析、MAC 帧、BA Action、**RTS/CTS/ACK/BAR**、DHCP Deep Parse |
+| **L3 数据提取** | 统一的 Result Dict | 帧统计（全子类型）、BA 事件、断连/关联、DHCP 交互、信号数据、重传统计 |
 | **L4 自动检测** | `detect_*_issues()` 自动发现异常 | BA 风暴/循环、频繁断连、弱信号/高重传、DHCP NAK/多轮交互 |
-| **L5 分析框架** | AI + 人工 5 维度分析 | A.连接流程 B.帧质量(必检) C.Block Ack D.DHCP E.空口效率 |
-| **L6 根因定位** | 跨层因果链重建 | 分层归因、因果链重建、问题归属、可能原因排序 |
+| **L5 分析框架** | AI + 人工 6 维度分析 | A.连接流程 B.帧质量(必检: 重传/信号/聚合/**控制帧RTS-CTS-ACK**) C.Block Ack D.DHCP E.空口效率 **F.硬件指标** |
+| **L6 根因定位** | 跨层因果链重建 | 分层归因、因果链重建、交叉验证、问题归属、排查建议 |
+
+### 分析维度总览
+
+| 维度 | 分析内容 | 数据来源 |
+|------|----------|----------|
+| **帧统计** | Beacon/Probe/Auth/Assoc/RTS/CTS/ACK/BAR/QoS Data/Null/Action/Deauth/Disassoc 全子类型计数与占比 | analyze.py |
+| **重传分析** | per-MAC 重传率、趋势变化、与 BA/断连事件时间关联 | analyze.py |
+| **信号与噪声** | per-MAC 信号时序、平均/最小/最大、突降检测、SNR 估算 | analyze.py + hw_metrics.py |
+| **帧大小与聚合** | A-MPDU/A-MSDU 聚合效率、大帧/小帧占比 | hw_metrics.py |
+| **控制帧分析** | RTS/CTS 占比（隐藏节点检测）、BAR 与数据帧比例、ACK 确认效率 | analyze.py |
+| **Block Ack** | ADDBA/DELBA 方向、TID 匹配、BA 循环/风暴、buffer size | analyze.py |
+| **断连/关联** | Deauth/Disassoc reason code、Auth/Assoc status code | analyze.py |
+| **DHCP** | DORA 完整性、NAK/超时/无响应、多轮交互、每步耗时 | analyze.py |
+| **空口效率** | 数据帧占比、管理帧/控制帧开销、有效吞吐估算 | analyze.py |
+| **硬件指标** | 信号直方图、5秒窗口稳定性、噪声底噪、重传帧信号对比、速率分布、天线分布、每秒趋势 | hw_metrics.py |
 
 ### 自动检测阈值
 
@@ -150,6 +165,8 @@ python3 wifi_analyzer.py <目录> --type ba
 |--------|------|--------|
 | BA 风暴 | 1 秒内 >5 个 DELBA | HIGH |
 | BA 循环 | DELBA→ADDBA 间隔 <2s，≥3 次 | HIGH |
+| ADDBA 失败 | ADDBA Response 返回失败状态 | MEDIUM |
+| TID 不匹配 | DELBA 与 ADDBA 的 TID 不一致 | MEDIUM |
 | 频繁断连 | Deauth + Disassoc >3 次 | HIGH |
 | 弱信号 | < -70 dBm | MEDIUM |
 | 信号突变 | 突降 >15 dBm | INFO |
