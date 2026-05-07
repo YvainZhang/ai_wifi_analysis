@@ -161,21 +161,24 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 | **Air Efficiency** | Data frame ratio, management/control frame overhead, effective throughput estimation | analyze.py |
 | **Hardware Metrics** | Signal histogram, 5-second window stability, noise floor, retransmit frame signal comparison, rate distribution, antenna distribution, per-second trend | hw_metrics.py |
 
-### Auto Detection Thresholds
+### Auto Detection Thresholds (Grouped by Domain)
 
-| Detection | Condition | Severity |
-|-----------|-----------|----------|
-| BA Storm | >5 DELBAs in 1 second | HIGH |
-| BA Cycle | DELBA→ADDBA interval <2s, ≥3 times | HIGH |
-| ADDBA Failure | ADDBA Response returns failure status | MEDIUM |
-| TID Mismatch | DELBA and ADDBA TID inconsistency | MEDIUM |
-| Frequent Disconnect | Deauth + Disassociation >3 times | HIGH |
-| Weak Signal | < -70 dBm | MEDIUM |
-| Signal Sudden Drop | Drop >15 dBm | INFO |
-| High Retransmit Rate | >15% HIGH, 5%~15% MEDIUM | HIGH/MEDIUM |
-| DHCP NAK | AP rejects IP allocation | HIGH/MEDIUM |
-| DHCP No Response | Discover without Offer | HIGH |
-| DHCP Multi-round | >1 round of DORA interaction | HIGH |
+| Domain | Detection | Condition | Severity |
+|--------|-----------|-----------|----------|
+| **Connectivity** | Frequent Disconnect | Deauth + Disassociation >3 times | HIGH |
+| **Network Access** | DHCP NAK | AP rejects IP allocation | HIGH/MEDIUM |
+| **Network Access** | DHCP No Response | Discover without Offer | HIGH |
+| **Network Access** | DHCP Multi-round | >1 round of DORA interaction | HIGH |
+| **Network Access** | DHCP Request NAKed | Request received NAK instead of ACK | HIGH |
+| **Performance** | BA Storm | >5 DELBAs in 1 second | HIGH |
+| **Performance** | BA Cycle | DELBA→ADDBA interval <2s, ≥3 times | HIGH |
+| **Performance** | High Retransmit Rate | >15% HIGH, 5%~15% MEDIUM | HIGH/MEDIUM |
+| **Protocol** | ADDBA Failure | ADDBA Response returns failure status | MEDIUM |
+| **Protocol** | TID Mismatch | DELBA and ADDBA TID inconsistency | MEDIUM |
+| **Protocol** | DELBA Reason Analysis | Same reason code appears >3 times | INFO |
+| **Protocol** | DELBA Direction | All DELBAs from Recipient side | INFO |
+| **RF Quality** | Weak Signal | < -70 dBm | MEDIUM |
+| **RF Quality** | Signal Sudden Drop | Drop >15 dBm | INFO |
 
 ### Typical Causal Chain
 

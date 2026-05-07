@@ -87,6 +87,16 @@
   <path d="M 1042 272 L 1042 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
   <rect x="30" y="295" width="1140" height="90" rx="8" fill="#faf5ff" stroke="#ede9fe" stroke-width="1.2" stroke-dasharray="6,3"/>
   <text x="50" y="313" font-size="10" fill="#9333ea" font-weight="600">LAYER 4 · AUTO ISSUE DETECTION (detect_*_issues)</text>
+  <rect x="80" y="306" width="200" height="12" rx="3" fill="#fef2f2" stroke="#fca5a5" stroke-width="0.8"/>
+  <text x="180" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#dc2626">Connectivity</text>
+  <rect x="288" y="306" width="200" height="12" rx="3" fill="#eff6ff" stroke="#93c5fd" stroke-width="0.8"/>
+  <text x="388" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#2563eb">Network Access</text>
+  <rect x="496" y="306" width="200" height="12" rx="3" fill="#f0fdf4" stroke="#86efac" stroke-width="0.8"/>
+  <text x="596" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#16a34a">Performance</text>
+  <rect x="704" y="306" width="200" height="12" rx="3" fill="#faf5ff" stroke="#c4b5fd" stroke-width="0.8"/>
+  <text x="804" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#9333ea">Protocol</text>
+  <rect x="912" y="306" width="200" height="12" rx="3" fill="#fff7ed" stroke="#fdba74" stroke-width="0.8"/>
+  <text x="1012" y="315" text-anchor="middle" font-size="8" font-weight="600" fill="#ea580c">RF Quality</text>
   <g filter="url(#sh)">
     <rect x="80" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
     <text x="185" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Block Ack Issues</text>

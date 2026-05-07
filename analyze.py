@@ -108,6 +108,39 @@ def identify_roles(frame_stats, ba_events, assoc_events):
     return ap_candidates, sta_candidates
 
 
+DOMAIN_LABELS = {
+    'connectivity': '连接性',
+    'network_access': '网络接入',
+    'performance': '性能',
+    'protocol': '协议',
+    'rf_quality': '射频质量',
+}
+
+def _domain_for(category):
+    _CATEGORY_DOMAIN = {
+        '频繁断连': 'connectivity',
+        '断连 Reason': 'connectivity',
+        'DHCP 多轮交互': 'network_access',
+        'DHCP NAK': 'network_access',
+        'DHCP 无响应': 'network_access',
+        'DHCP Request 被 NAK': 'network_access',
+        'DHCP 重传': 'network_access',
+        'DHCP 客户端': 'network_access',
+        'DHCP 地址信息': 'network_access',
+        'BA Thrashing': 'performance',
+        'DELBA/ADDBA 循环': 'performance',
+        'DELBA 风暴': 'performance',
+        '高重传率': 'performance',
+        'TID 不匹配': 'protocol',
+        'ADDBA 失败': 'protocol',
+        'DELBA Reason 分析': 'protocol',
+        'DELBA 方向': 'protocol',
+        '弱信号': 'rf_quality',
+        '信号突变': 'rf_quality',
+    }
+    return _CATEGORY_DOMAIN.get(category, 'protocol')
+
+
 def detect_ba_issues(ba_events, duration):
     """Detect Block Ack related problems."""
     issues = []
@@ -124,6 +157,7 @@ def detect_ba_issues(ba_events, duration):
             issues.append({
                 'severity': 'HIGH',
                 'category': 'BA Thrashing',
+                'domain': _domain_for('BA Thrashing'),
                 'desc': 'DELBA 发送频率过高 (%.1f 次/秒, 共 %d 次)' % (delba_rate, len(delbas)),
                 'detail': 'DELBAs 全部来自: %s' % ', '.join(set(e['src'] for e in delbas)),
             })
@@ -141,6 +175,7 @@ def detect_ba_issues(ba_events, duration):
             issues.append({
                 'severity': 'HIGH',
                 'category': 'DELBA/ADDBA 循环',
+                'domain': _domain_for('DELBA/ADDBA 循环'),
                 'desc': '检测到 %d 次 DELBA->ADDBA 快速重建循环' % cycles,
                 'detail': 'BA 会话反复拆除并重建，通常表示底层传输质量差或 BA 窗口管理异常',
             })
@@ -152,6 +187,7 @@ def detect_ba_issues(ba_events, duration):
         issues.append({
             'severity': 'MEDIUM',
             'category': 'TID 不匹配',
+            'domain': _domain_for('TID 不匹配'),
             'desc': 'DELBA TID=%s vs ADDBA TID=%s' % (delba_tids, addba_tids),
             'detail': '拆除和重建的 BA 会话 TID 不一致，可能导致 BA 状态机混乱',
         })
@@ -161,6 +197,7 @@ def detect_ba_issues(ba_events, duration):
         issues.append({
             'severity': 'MEDIUM',
             'category': 'ADDBA 失败',
+            'domain': _domain_for('ADDBA 失败'),
             'desc': '%d 次 ADDBA Response 返回失败状态' % len(addba_fails),
             'detail': '对端拒绝了 BA 会话建立请求',
         })
@@ -184,6 +221,7 @@ def detect_ba_issues(ba_events, duration):
             issues.append({
                 'severity': 'HIGH',
                 'category': 'DELBA 风暴',
+                'domain': _domain_for('DELBA 风暴'),
                 'desc': '在 %.3fs 附近 %.1f 秒内爆发 %d 个 DELBA' % (burst_start, 1.0, max_burst),
                 'detail': '短时间内大量 DELBA 通常意味着严重的传输问题或状态机死循环',
             })
@@ -198,6 +236,7 @@ def detect_ba_issues(ba_events, duration):
                 issues.append({
                     'severity': 'INFO',
                     'category': 'DELBA Reason 分析',
+                    'domain': _domain_for('DELBA Reason 分析'),
                     'desc': 'reason=%d 出现 %d 次: %s' % (reason_code, count, reason_text(reason_code)),
                 })
 
@@ -210,6 +249,7 @@ def detect_ba_issues(ba_events, duration):
             issues.append({
                 'severity': 'INFO',
                 'category': 'DELBA 方向',
+                'domain': _domain_for('DELBA 方向'),
                 'desc': '所有 DELBA 均由 Recipient(接收方) 发起，共 %d 次' % initiators['Recipient'],
                 'detail': '接收方主动拆 BA 通常表示：接收窗口溢出、seq hole、或 buffer 管理异常',
             })
@@ -230,6 +270,7 @@ def detect_disconnect_issues(disconnect_events, duration):
         issues.append({
             'severity': 'HIGH',
             'category': '频繁断连',
+            'domain': _domain_for('频繁断连'),
             'desc': '共 %d 次断连事件 (%d Deauth + %d Disassoc)' % (
                 len(disconnect_events), len(deauths), len(disassocs)),
             'detail': 'Deauth 和 Disassoc 事件汇总',
@@ -244,6 +285,7 @@ def detect_disconnect_issues(disconnect_events, duration):
             issues.append({
                 'severity': 'INFO',
                 'category': '断连 Reason',
+                'domain': _domain_for('断连 Reason'),
                 'desc': 'reason=%d 出现 %d 次: %s' % (code, count, reason_text(code)),
             })
 
@@ -266,6 +308,7 @@ def detect_signal_issues(signal_data):
             issues.append({
                 'severity': 'MEDIUM',
                 'category': '弱信号',
+                'domain': _domain_for('弱信号'),
                 'desc': '%s 信号最低 %d dBm (avg=%d, max=%d)' % (mac, min_s, avg_s, max_s),
                 'detail': '信号低于 -70 dBm 可能导致丢包和重传增加',
             })
@@ -277,6 +320,7 @@ def detect_signal_issues(signal_data):
                 issues.append({
                     'severity': 'INFO',
                     'category': '信号突变',
+                    'domain': _domain_for('信号突变'),
                     'desc': '%s 在 %.3fs 信号下降 %d dBm (%d -> %d)' % (
                         mac, samples[i][0], drop, samples[i - 1][1], samples[i][1]),
                 })
@@ -297,6 +341,7 @@ def detect_retransmit_issues(retransmit_stats, total_data_frames):
             issues.append({
                 'severity': 'HIGH' if rate > 15 else 'MEDIUM',
                 'category': '高重传率',
+                'domain': _domain_for('高重传率'),
                 'desc': '%s 重传 %d 次 (%.1f%%)' % (mac, count, rate),
                 'detail': '高重传率通常表示信道质量差、干扰、或硬件问题',
             })
@@ -326,6 +371,7 @@ def detect_dhcp_issues(dhcp_events):
         issues.append({
             'severity': 'HIGH',
             'category': 'DHCP 多轮交互',
+            'domain': _domain_for('DHCP 多轮交互'),
             'desc': '%d 轮 DHCP 尝试, %d Discover / %d Offer / %d Request / %d ACK / %d NAK' % (
                 len(xid_groups), total_discover, total_offer, total_request, total_ack, total_nak),
             'detail': '正常入网只需 1 轮 DORA(Discover-Offer-Request-ACK), 多轮说明每轮都失败了',
@@ -336,6 +382,7 @@ def detect_dhcp_issues(dhcp_events):
         issues.append({
             'severity': 'HIGH' if total_nak >= 3 else 'MEDIUM',
             'category': 'DHCP NAK',
+            'domain': _domain_for('DHCP NAK'),
             'desc': 'AP DHCP Server 发送了 %d 次 NAK (拒绝分配 IP)' % total_nak,
             'detail': 'NAK 表示服务器主动拒绝分配请求的 IP。可能原因：地址池耗尽、IP 冲突、租约表异常、DHCP Server 配置错误',
         })
@@ -351,6 +398,7 @@ def detect_dhcp_issues(dhcp_events):
         issues.append({
             'severity': 'HIGH',
             'category': 'DHCP 无响应',
+            'domain': _domain_for('DHCP 无响应'),
             'desc': '%d 轮 Discover 未收到 Offer' % disc_without_offer,
             'detail': 'AP 的 DHCP Server 未响应 Discover, 可能 DHCP 服务未运行或端口被占用',
         })
@@ -367,6 +415,7 @@ def detect_dhcp_issues(dhcp_events):
         issues.append({
             'severity': 'HIGH',
             'category': 'DHCP Request 被 NAK',
+            'domain': _domain_for('DHCP Request 被 NAK'),
             'desc': '%d 轮 Request 收到 NAK 而非 ACK' % req_no_ack,
             'detail': 'AP Offer 了 IP 但随后 NAK 了 Request, 这是 DHCP Server 逻辑异常的典型表现',
         })
@@ -378,6 +427,7 @@ def detect_dhcp_issues(dhcp_events):
         issues.append({
             'severity': 'INFO',
             'category': 'DHCP 重传',
+            'domain': _domain_for('DHCP 重传'),
             'desc': 'Discover 重传 %d 次, Request 重传 %d 次' % (max(0, retrans_disc), max(0, retrans_req)),
             'detail': '重传表示对端未及时响应, 加剧入网延迟',
         })
@@ -389,6 +439,7 @@ def detect_dhcp_issues(dhcp_events):
         issues.append({
             'severity': 'INFO',
             'category': 'DHCP 客户端',
+            'domain': _domain_for('DHCP 客户端'),
             'desc': '客户端 MAC: %s, 主机名: %s' % (', '.join(clients), ', '.join(hosts)),
         })
 
@@ -399,6 +450,7 @@ def detect_dhcp_issues(dhcp_events):
         issues.append({
             'severity': 'INFO',
             'category': 'DHCP 地址信息',
+            'domain': _domain_for('DHCP 地址信息'),
             'desc': 'Server: %s, 请求 IP: %s' % (', '.join(servers), ', '.join(req_ips)),
         })
 
@@ -485,13 +537,24 @@ def generate_report(result, problem_desc=None, brief=False):
         w('## 问题诊断')
         w()
         sev_order = {'HIGH': 0, 'MEDIUM': 1, 'INFO': 2}
-        all_issues.sort(key=lambda x: sev_order.get(x['severity'], 9))
+        domain_order = ['connectivity', 'network_access', 'performance', 'protocol', 'rf_quality']
+        domain_groups = defaultdict(list)
         for iss in all_issues:
-            marker = {'HIGH': '!!', 'MEDIUM': '!', 'INFO': 'i'}[iss['severity']]
-            w('**[%s]** [%s] %s' % (marker, iss['category'], iss['desc']))
-            if 'detail' in iss:
-                w('> %s' % iss['detail'])
+            domain_groups[iss.get('domain', 'protocol')].append(iss)
+        for domain in domain_order:
+            group = domain_groups.get(domain)
+            if not group:
+                continue
+            domain_label = DOMAIN_LABELS.get(domain, domain)
+            w('### %s' % domain_label)
             w()
+            group.sort(key=lambda x: sev_order.get(x['severity'], 9))
+            for iss in group:
+                marker = {'HIGH': '!!', 'MEDIUM': '!', 'INFO': 'i'}[iss['severity']]
+                w('**[%s]** [%s] %s' % (marker, iss['category'], iss['desc']))
+                if 'detail' in iss:
+                    w('> %s' % iss['detail'])
+                w()
     else:
         w('## 问题诊断')
         w()
@@ -678,11 +741,23 @@ def print_terminal_report(result, brief=False):
     if all_issues:
         print('%s问题诊断:%s' % (B, R))
         sev_color = {'HIGH': RED, 'MEDIUM': YEL, 'INFO': CYN}
+        domain_order = ['connectivity', 'network_access', 'performance', 'protocol', 'rf_quality']
+        domain_groups = defaultdict(list)
         for iss in all_issues:
-            c = sev_color.get(iss['severity'], '')
-            print('  %s[%s]%s [%s] %s' % (c, iss['severity'], R, iss['category'], iss['desc']))
-            if 'detail' in iss:
-                print('         %s' % iss['detail'])
+            domain_groups[iss.get('domain', 'protocol')].append(iss)
+        for domain in domain_order:
+            group = domain_groups.get(domain)
+            if not group:
+                continue
+            domain_label = DOMAIN_LABELS.get(domain, domain)
+            print('  %s--- %s ---%s' % (CYN, domain_label, R))
+            sev_order = {'HIGH': 0, 'MEDIUM': 1, 'INFO': 2}
+            group.sort(key=lambda x: sev_order.get(x['severity'], 9))
+            for iss in group:
+                c = sev_color.get(iss['severity'], '')
+                print('  %s[%s]%s [%s] %s' % (c, iss['severity'], R, iss['category'], iss['desc']))
+                if 'detail' in iss:
+                    print('         %s' % iss['detail'])
         print()
 
     if brief:
