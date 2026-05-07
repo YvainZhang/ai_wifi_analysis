@@ -39,45 +39,45 @@
   <rect x="30" y="192" width="1140" height="90" rx="8" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.2" stroke-dasharray="6,3"/>
   <text x="50" y="210" font-size="10" fill="#16a34a" font-weight="600">LAYER 3 · 数据提取 (Unified Result Dict)</text>
   <g filter="url(#sh)">
-    <rect x="50" y="218" width="165" height="54" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-    <text x="132" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">帧统计 frame_stats</text>
-    <text x="58" y="250" font-size="8.5" fill="#4b5563">Mgmt/Ctrl/Data 全子类型</text>
-    <text x="58" y="261" font-size="8.5" fill="#4b5563">Beacon/Probe/RTS/CTS/ACK</text>
-    <text x="58" y="272" font-size="8.5" fill="#4b5563">BAR/QoS Data/Null</text>
+    <rect x="48" y="218" width="175" height="56" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <text x="135" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">帧统计</text>
+    <text x="56" y="250" font-size="8.5" fill="#4b5563">Mgmt/Ctrl/Data 全子类型</text>
+    <text x="56" y="260" font-size="8.5" fill="#4b5563">Beacon/Probe/RTS/CTS/ACK</text>
+    <text x="56" y="270" font-size="8.5" fill="#4b5563">BAR/QoS Data/Null</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="230" y="218" width="165" height="54" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-    <text x="312" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">BA 事件 ba_events</text>
-    <text x="238" y="250" font-size="8.5" fill="#4b5563">ADDBA Req/Resp</text>
-    <text x="238" y="261" font-size="8.5" fill="#4b5563">DELBA reason/initiator</text>
-    <text x="238" y="272" font-size="8.5" fill="#4b5563">TID / buffer size</text>
+    <rect x="228" y="218" width="175" height="56" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <text x="315" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">BA 事件</text>
+    <text x="236" y="250" font-size="8.5" fill="#4b5563">ADDBA Req/Resp</text>
+    <text x="236" y="260" font-size="8.5" fill="#4b5563">DELBA reason/initiator</text>
+    <text x="236" y="270" font-size="8.5" fill="#4b5563">TID / buffer size</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="410" y="218" width="165" height="54" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-    <text x="492" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">断连/关联 events</text>
-    <text x="418" y="250" font-size="8.5" fill="#4b5563">Deauth/Disassoc reason</text>
-    <text x="418" y="261" font-size="8.5" fill="#4b5563">Auth/Assoc/Reassoc</text>
-    <text x="418" y="272" font-size="8.5" fill="#4b5563">status code</text>
+    <rect x="408" y="218" width="175" height="56" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <text x="495" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">断连/关联</text>
+    <text x="416" y="250" font-size="8.5" fill="#4b5563">Deauth/Disassoc reason</text>
+    <text x="416" y="260" font-size="8.5" fill="#4b5563">Auth/Assoc/Reassoc</text>
+    <text x="416" y="270" font-size="8.5" fill="#4b5563">status code</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="590" y="218" width="165" height="54" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-    <text x="672" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">DHCP 交互 dhcp_events</text>
-    <text x="598" y="250" font-size="8.5" fill="#4b5563">DORA 每步详情</text>
-    <text x="598" y="261" font-size="8.5" fill="#4b5563">NAK / 超时 / xid</text>
-    <text x="598" y="272" font-size="8.5" fill="#4b5563">server_id / client_mac</text>
+    <rect x="588" y="218" width="175" height="56" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <text x="675" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">DHCP 交互</text>
+    <text x="596" y="250" font-size="8.5" fill="#4b5563">DORA 每步详情</text>
+    <text x="596" y="260" font-size="8.5" fill="#4b5563">NAK/超时/xid</text>
+    <text x="596" y="270" font-size="8.5" fill="#4b5563">server/client MAC</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="770" y="218" width="165" height="54" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-    <text x="852" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">信号数据 signal_data</text>
-    <text x="778" y="250" font-size="8.5" fill="#4b5563">per-MAC 信号时序</text>
-    <text x="778" y="261" font-size="8.5" fill="#4b5563">dbm_signal 样本</text>
+    <rect x="768" y="218" width="175" height="56" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <text x="855" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">信号数据</text>
+    <text x="776" y="250" font-size="8.5" fill="#4b5563">per-MAC 信号时序</text>
+    <text x="776" y="260" font-size="8.5" fill="#4b5563">dbm_signal 样本</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="960" y="218" width="165" height="54" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
-    <text x="1042" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">重传/时间 retransmit</text>
-    <text x="968" y="250" font-size="8.5" fill="#4b5563">per-MAC 重传计数</text>
-    <text x="968" y="261" font-size="8.5" fill="#4b5563">重传率</text>
-    <text x="968" y="272" font-size="8.5" fill="#4b5563">data_timestamps</text>
+    <rect x="948" y="218" width="175" height="56" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+    <text x="1035" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">重传/时间</text>
+    <text x="956" y="250" font-size="8.5" fill="#4b5563">per-MAC 重传计数</text>
+    <text x="956" y="260" font-size="8.5" fill="#4b5563">重传率</text>
+    <text x="956" y="270" font-size="8.5" fill="#4b5563">data_timestamps</text>
   </g>
   <path d="M 132 272 L 132 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
   <path d="M 312 272 L 312 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
@@ -88,41 +88,41 @@
   <rect x="30" y="295" width="1140" height="90" rx="8" fill="#faf5ff" stroke="#ede9fe" stroke-width="1.2" stroke-dasharray="6,3"/>
   <text x="50" y="313" font-size="10" fill="#9333ea" font-weight="600">LAYER 4 · 自动问题检测 (detect_*_issues)</text>
   <g filter="url(#sh)">
-    <rect x="80" y="320" width="210" height="55" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="185" y="338" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Block Ack 问题</text>
-    <text x="88" y="351" font-size="8.5" fill="#6b7280">DELBA风暴 &gt;5/s</text>
-    <text x="88" y="361" font-size="8.5" fill="#6b7280">BA循环 &lt;2s</text>
-    <text x="88" y="371" font-size="8.5" fill="#6b7280">TID不匹配 · ADDBA失败</text>
+    <rect x="80" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="185" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">Block Ack 问题</text>
+    <text x="88" y="349" font-size="8.5" fill="#6b7280">DELBA风暴 &gt;5/s</text>
+    <text x="88" y="359" font-size="8.5" fill="#6b7280">BA循环 &lt;2s</text>
+    <text x="88" y="369" font-size="8.5" fill="#6b7280">TID不匹配·ADDBA失败</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="310" y="320" width="210" height="55" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="415" y="338" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">断连问题</text>
-    <text x="318" y="351" font-size="8.5" fill="#6b7280">频繁断连 &gt;3次</text>
-    <text x="318" y="361" font-size="8.5" fill="#6b7280">Deauth/Disassoc</text>
-    <text x="318" y="371" font-size="8.5" fill="#6b7280">Reason Code 归因</text>
+    <rect x="295" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="400" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">断连问题</text>
+    <text x="303" y="349" font-size="8.5" fill="#6b7280">频繁断连 &gt;3次</text>
+    <text x="303" y="359" font-size="8.5" fill="#6b7280">Deauth / Disassoc</text>
+    <text x="303" y="369" font-size="8.5" fill="#6b7280">Reason Code 归因</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="540" y="320" width="210" height="55" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="645" y="338" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">帧质量问题</text>
-    <text x="548" y="351" font-size="8.5" fill="#6b7280">弱信号 &lt;-70dBm</text>
-    <text x="548" y="361" font-size="8.5" fill="#6b7280">信号突降 &gt;15dBm</text>
-    <text x="548" y="371" font-size="8.5" fill="#6b7280">重传 &gt;5% MEDIUM</text>
-    <text x="548" y="381" font-size="8.5" fill="#6b7280">重传 &gt;15% HIGH</text>
+    <rect x="510" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="615" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">帧质量问题</text>
+    <text x="518" y="349" font-size="8.5" fill="#6b7280">弱信号 &lt;-70dBm</text>
+    <text x="518" y="359" font-size="8.5" fill="#6b7280">信号突降 &gt;15dBm</text>
+    <text x="518" y="369" font-size="8.5" fill="#6b7280">重传 &gt;5% MEDIUM</text>
+    <text x="518" y="379" font-size="8.5" fill="#6b7280">重传 &gt;15% HIGH</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="770" y="320" width="210" height="55" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="875" y="338" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">DHCP 问题</text>
-    <text x="778" y="351" font-size="8.5" fill="#6b7280">NAK · 无Offer</text>
-    <text x="778" y="361" font-size="8.5" fill="#6b7280">Request被NAK</text>
-    <text x="778" y="371" font-size="8.5" fill="#6b7280">多轮DORA · 重传</text>
+    <rect x="725" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="830" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">DHCP 问题</text>
+    <text x="733" y="349" font-size="8.5" fill="#6b7280">NAK · 无Offer</text>
+    <text x="733" y="359" font-size="8.5" fill="#6b7280">Request被NAK</text>
+    <text x="733" y="369" font-size="8.5" fill="#6b7280">多轮DORA · 重传</text>
   </g>
   <g filter="url(#sh)">
-    <rect x="990" y="320" width="210" height="55" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="1095" y="338" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">帧统计异常</text>
-    <text x="998" y="351" font-size="8.5" fill="#6b7280">RTS/CTS占比过高</text>
-    <text x="998" y="361" font-size="8.5" fill="#6b7280">QoS Data占比低</text>
-    <text x="998" y="371" font-size="8.5" fill="#6b7280">Null帧占比高</text>
-    <text x="998" y="381" font-size="8.5" fill="#6b7280">管理帧开销大</text>
+    <rect x="940" y="320" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+    <text x="1045" y="336" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">帧统计异常</text>
+    <text x="948" y="349" font-size="8.5" fill="#6b7280">RTS/CTS占比过高</text>
+    <text x="948" y="359" font-size="8.5" fill="#6b7280">QoS Data占比低</text>
+    <text x="948" y="369" font-size="8.5" fill="#6b7280">Null帧占比高</text>
+    <text x="948" y="379" font-size="8.5" fill="#6b7280">管理帧开销大</text>
   </g>
   <path d="M 185 375 L 185 402" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
   <path d="M 415 375 L 415 402" stroke="#2563eb" stroke-width="1.2" fill="none" marker-end="url(#ab)"/>
