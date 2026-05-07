@@ -136,6 +136,7 @@ wifi_analyzer.py          CLI 入口，串联整个流程
   ├── pcapng_parser.py    pcapng 二进制解析器
   ├── omnipeek_parser.py  OmniPeek .pkt 解析器
   ├── analyze.py          数据提取 + 问题检测 + 报告生成
+  ├── hw_metrics.py       硬件指标深度分析（信号/噪声/帧大小/天线/速率）
   ├── prompt_builder.py   分析方法论 + prompt 构建
   └── llm_client.py       通用 LLM API 客户端
 ```
@@ -167,6 +168,20 @@ python3 analyze.py <目录> --report report.md
 # 过滤特定 MAC
 python3 analyze.py <文件> --mac AA:BB:CC:DD:EE:FF --report filtered.md
 ```
+
+## 硬件指标深度分析
+
+`hw_metrics.py` 从 pcapng 抓包中提取 radiotap 层的硬件诊断数据，用于定位射频层问题：
+
+```bash
+# 分析所有 MAC
+python3 hw_metrics.py capture.pcapng
+
+# 只分析指定 MAC
+python3 hw_metrics.py capture.pcapng AA:BB:CC:DD:EE:FF
+```
+
+分析维度包括：信号强度分布、5 秒窗口稳定性、噪声底噪、SNR 估算、重传帧与正常帧信号对比、帧大小分布（聚合效率）、数据速率分布、天线分布、每秒吞吐与重传趋势，以及自动诊断总结。
 
 ## 纯 Python，零依赖
 

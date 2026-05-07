@@ -44,6 +44,13 @@ Mode 2 — Claude Code skill:
 
 **Byte-order gotchas**: pcapng block headers are little-endian; BA Parameter Set fields are big-endian (`>H`). DELBA body: category at payload[0], action at payload[1], Parameter Set at payload[2:4], reason at payload[4:6].
 
+### `hw_metrics.py` — hardware-level metrics extraction (standalone)
+
+- `analyze_hw_metrics(filepath, target_macs)`: Extracts radiotap-layer hardware diagnostics from pcapng. Returns signal histogram, 5-second window stability, noise floor, frame size distribution, antenna/rate data, per-second stats, retry-vs-normal signal comparison.
+- `print_report(results, target_macs)`: Terminal report with 11 analysis dimensions: radiotap field availability, signal distribution, signal stability, noise floor, SNR estimation, retry signal comparison, frame size distribution (A-MPDU/AMSDU efficiency), legacy rate distribution, antenna diversity, per-second throughput/retransmit trend, diagnostic summary.
+- Dependencies: imports `PcapngReader`, `parse_radiotap`, `parse_frame`, `DATA` from `pcapng_parser.py`.
+- Usage: `python3 hw_metrics.py <pcapng> [mac1] [mac2] ...`
+
 ### `omnipeek_parser.py` — OmniPeek/AiroPeek .pkt parser
 
 - `parse_omnipeek()`: Returns same unified dict structure.
@@ -123,6 +130,10 @@ python3 wifi_analyzer.py <directory> --extract-only --save-report extracted.md
 python3 analyze.py <directory> --report <directory>/_extracted.md
 python3 analyze.py <file> --mac <addr> --from <sec> --to <sec> --report out.md
 python3 analyze.py <directory> --brief
+
+# Hardware metrics deep analysis
+python3 hw_metrics.py <pcapng>
+python3 hw_metrics.py <pcapng> <mac1> <mac2>
 ```
 
 ## Extending
