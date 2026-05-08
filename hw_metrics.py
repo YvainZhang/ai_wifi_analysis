@@ -617,6 +617,9 @@ def generate_payload_chart(sec_stats, output_path, zh=False):
             print(f"  PNG:   {png_path}")
         except Exception:
             pass
+
+
+if __name__ == '__main__':
     import argparse
     ap = argparse.ArgumentParser(description='Hardware-level WiFi metrics from pcapng')
     ap.add_argument('pcapng', help='pcapng capture file')
