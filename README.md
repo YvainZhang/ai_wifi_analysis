@@ -15,9 +15,37 @@ git clone https://github.com/yourname/wifi-analyzer.git
 cd wifi-analyzer
 ```
 
-### 2. Configure API Key
+### 2. Prepare Capture
 
-Choose one method:
+Create a directory with capture files and problem description:
+
+```bash
+mkdir my_case
+cp capture.pcapng my_case/
+# Edit problem description (template in templates/问题描述模板.md)
+```
+
+### 3. Choose Your Path
+
+#### Path A: AI CLI (Recommended)
+
+If you are already in an AI CLI (Claude Code, Cursor, opencode, etc.), you can skip all API configuration. The AI CLI itself acts as the LLM backend.
+
+```bash
+# Extract data only — no API key needed
+python3 analyze.py my_case --report extracted.md
+
+# Hardware metrics
+python3 hw_metrics.py capture.pcapng AA:BB:CC:DD:EE:FF
+```
+
+Then ask the AI CLI directly (e.g. `> Analyze this WiFi capture using the extracted data`). The AI CLI will read the code, extracted data, and methodology to perform the full 6-layer analysis.
+
+> **Why this works:** `analyze.py` handles L1–L4 (parsing, decoding, extraction, auto detection). `hw_metrics.py` adds RF-layer diagnostics. The AI CLI provides L5–L6 (analysis framework, root cause identification) by reading the code and data — no separate API call needed.
+
+#### Path B: Standalone
+
+Run `wifi_analyzer.py` to call an external LLM API. Requires API key configuration:
 
 ```bash
 # Method 1: Environment variable
@@ -33,17 +61,7 @@ cat > ~/.wifi_analyzer.json << 'EOF'
 EOF
 ```
 
-### 3. Prepare Capture
-
-Create a directory with capture files and problem description:
-
-```bash
-mkdir my_case
-cp capture.pcapng my_case/
-# Edit problem description (template in templates/问题描述模板.md)
-```
-
-### 4. Run Analysis
+Then run:
 
 ```bash
 python3 wifi_analyzer.py my_case

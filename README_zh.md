@@ -13,9 +13,37 @@ git clone https://github.com/yourname/wifi-analyzer.git
 cd wifi-analyzer
 ```
 
-### 2. 配置 API Key
+### 2. 准备抓包
 
-任选一种方式：
+创建一个目录，放入抓包文件和问题描述：
+
+```bash
+mkdir my_case
+cp capture.pcapng my_case/
+# 编辑问题描述（模板在 templates/问题描述模板.md）
+```
+
+### 3. 选择使用方式
+
+#### 方式 A：AI CLI（推荐）
+
+如果你已经在 AI CLI（Claude Code、Cursor、opencode 等）中，可以跳过所有 API 配置。AI CLI 本身就是 LLM 后端。
+
+```bash
+# 只提取数据 — 无需 API Key
+python3 analyze.py my_case --report extracted.md
+
+# 硬件指标分析
+python3 hw_metrics.py capture.pcapng AA:BB:CC:DD:EE:FF
+```
+
+然后直接向 AI CLI 提问（如 `> 根据提取的数据分析这次 WiFi 抓包`）。AI CLI 会阅读代码、提取数据和方法论，完成完整的 6 层分析。
+
+> **原理：** `analyze.py` 负责 L1–L4（解析、解码、提取、自动检测）。`hw_metrics.py` 提供射频层诊断。AI CLI 直接承担 L5–L6（分析框架、根因定位）——通过阅读代码和数据完成，无需单独调用外部 API。
+
+#### 方式 B：独立运行
+
+通过 `wifi_analyzer.py` 调用外部 LLM API，需要配置 API Key：
 
 ```bash
 # 方式一：环境变量
@@ -31,17 +59,7 @@ cat > ~/.wifi_analyzer.json << 'EOF'
 EOF
 ```
 
-### 3. 准备抓包
-
-创建一个目录，放入抓包文件和问题描述：
-
-```bash
-mkdir my_case
-cp capture.pcapng my_case/
-# 编辑问题描述（模板在 templates/问题描述模板.md）
-```
-
-### 4. 运行分析
+然后运行：
 
 ```bash
 python3 wifi_analyzer.py my_case
