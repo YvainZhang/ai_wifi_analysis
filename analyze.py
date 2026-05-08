@@ -138,6 +138,10 @@ def _domain_for(category):
         'DHCP 重传': 'connectivity',
         'DHCP 客户端': 'connectivity',
         'DHCP 地址信息': 'connectivity',
+        'RTS/CTS 开销过高': 'frame_quality',
+        'WMM TID 分布不均': 'frame_quality',
+        'FCS 错误': 'rf_quality',
+        '隐式重传': 'rf_quality',
     }
     return _CATEGORY_DOMAIN.get(category, 'protocol_ba')
 
@@ -327,6 +331,86 @@ def detect_signal_issues(signal_data):
                 })
                 break  # one per MAC is enough
 
+    return issues
+
+
+def detect_contention_issues(result):
+    """Detect channel contention / WMM imbalance issues."""
+    issues = []
+    stats = result.get('frame_stats', {})
+    ctrl = result.get('ctrl_stats', {})
+    tid = result.get('tid_frames', {})
+    total_data = stats.get('Data', 0)
+    if total_data == 0:
+        return issues
+
+    rts = ctrl.get('RTS', 0)
+    cts = ctrl.get('CTS', 0)
+    rts_cts_ratio = (rts + cts) / total_data * 100
+    if rts_cts_ratio > 20:
+        issues.append({
+            'severity': 'HIGH',
+            'category': 'RTS/CTS 开销过高',
+            'domain': 'frame_quality',
+            'desc': f'RTS/CTS 与数据帧比 {rts_cts_ratio:.1f}% ({rts} RTS + {cts} CTS / {total_data} Data)',
+            'detail': 'RTS/CTS > 20% 说明大量数据帧需要先发送 RTS 争用信道，可能存在隐藏节点或信道竞争激烈',
+        })
+    elif rts_cts_ratio > 10:
+        issues.append({
+            'severity': 'INFO',
+            'category': 'RTS/CTS 开销过高',
+            'domain': 'frame_quality',
+            'desc': f'RTS/CTS 与数据帧比 {rts_cts_ratio:.1f}% ({rts} RTS + {cts} CTS / {total_data} Data)',
+            'detail': 'RTS/CTS > 10%，有一定信道竞争开销',
+        })
+
+    if tid:
+        TID_AC = {0: 'BE', 1: 'BE', 2: 'BK', 3: 'BK', 4: 'VI', 5: 'VI', 6: 'VO', 7: 'VO'}
+        total_qos = sum(tid.values())
+        if total_qos > 100:
+            vo_vi = sum(tid.get(t, 0) for t in (4, 5, 6, 7))
+            pct = vo_vi / total_qos * 100
+            if pct > 80:
+                issues.append({
+                    'severity': 'MEDIUM',
+                    'category': 'WMM TID 分布不均',
+                    'domain': 'frame_quality',
+                    'desc': f'VO/VI 占 QoS 帧 {pct:.1f}%（{vo_vi}/{total_qos}），BE/BK 被挤压',
+                    'detail': '视频/语音流量占比过高会导致 BE/BK 流量延迟增大甚至丢包',
+                })
+
+    bar = ctrl.get('BAR', 0)
+    ba = ctrl.get('BA', 0)
+    if total_data > 100 and (bar + ba) > 0:
+        ba_ratio = (bar + ba) / total_data * 100
+        if ba_ratio > 15:
+            issues.append({
+                'severity': 'INFO',
+                'category': 'BA 会话开销',
+                'domain': 'protocol_ba',
+                'desc': f'BAR/BA 与数据帧比 {ba_ratio:.1f}% ({bar} BAR + {ba} BA / {total_data} Data)',
+                'detail': 'BAR/BA 协商帧占比偏高，检查 BA 窗口是否过小导致频繁请求',
+            })
+
+    return issues
+
+
+def detect_bit_error_issues(result):
+    """Detect FCS / CRC errors from radiotap RX flags."""
+    issues = []
+    fcs = result.get('fcs_errors', 0)
+    if fcs > 0:
+        stats = result.get('frame_stats', {})
+        total_frames = stats.get('Data', 0) + stats.get('Control', 0) + stats.get('Management', 0)
+        rate = fcs / (total_frames + fcs) * 100 if (total_frames + fcs) > 0 else 0
+        sev = 'HIGH' if rate > 5 else 'MEDIUM' if rate > 1 else 'INFO'
+        issues.append({
+            'severity': sev,
+            'category': 'FCS 错误',
+            'domain': 'rf_quality',
+            'desc': f'FCS 错误帧 {fcs} 个（错误率 {rate:.2f}%）',
+            'detail': 'FCS 错误说明帧在传输过程中损坏，通常由信号弱/噪声/干扰导致',
+        })
     return issues
 
 
@@ -529,10 +613,10 @@ def generate_report(result, problem_desc=None, brief=False):
     all_issues.extend(detect_disconnect_issues(result['disconnect_events'], meta['duration']))
     all_issues.extend(detect_signal_issues(result['signal_data']))
     all_issues.extend(detect_retransmit_issues(
-        result['retransmit_stats'],
-        stats.get('Data', 0),
-    ))
+        result['retransmit_stats'], stats.get('Data', 0)))
     all_issues.extend(detect_dhcp_issues(result['dhcp_events']))
+    all_issues.extend(detect_contention_issues(result))
+    all_issues.extend(detect_bit_error_issues(result))
 
     if all_issues:
         w('## 问题诊断')
@@ -736,6 +820,8 @@ def print_terminal_report(result, brief=False):
     all_issues.extend(detect_signal_issues(result['signal_data']))
     all_issues.extend(detect_retransmit_issues(result['retransmit_stats'], stats.get('Data', 0)))
     all_issues.extend(detect_dhcp_issues(result['dhcp_events']))
+    all_issues.extend(detect_contention_issues(result))
+    all_issues.extend(detect_bit_error_issues(result))
 
     if all_issues:
         print('%s问题诊断:%s' % (B, R))

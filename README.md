@@ -177,6 +177,8 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 | **Disconnect/Assoc** | Deauth/Disassoc reason code, Auth/Assoc status code | analyze.py |
 | **DHCP** | DORA completeness, NAK/timeout/no response, multi-round interaction, per-step timing | analyze.py |
 | **Air Efficiency** | Data frame ratio, management/control frame overhead, effective throughput estimation | analyze.py |
+| **Contention Analysis** | RTS/CTS to data ratio, WMM TID (VO/VI/BE/BK) distribution, BAR/BA session overhead | analyze.py + hw_metrics.py |
+| **Bit Error Analysis** | FCS error detection (rx_flags), implicit retransmit (sequence number gaps), error-signal correlation | analyze.py + hw_metrics.py |
 | **Hardware Metrics** | Signal histogram, 5-second window stability, noise floor, retransmit frame signal comparison, rate distribution, antenna distribution, per-second trend | hw_metrics.py |
 
 ### Auto Detection Thresholds (Layered — Bottom-Up Root Cause)
@@ -187,7 +189,10 @@ Issues are organized by causal layer. Lower layers are root causes that propagat
 |-------|--------|-----------|-----------|----------|
 | 1 (bottom) | **RF Quality** | Weak Signal | < -70 dBm | MEDIUM |
 | 1 | **RF Quality** | Signal Sudden Drop | Drop >15 dBm | INFO |
+| 1 | **RF Quality** | FCS Error | FCS error rate >1% MEDIUM, >5% HIGH | MEDIUM/HIGH |
 | 2 | **Frame Quality** | High Retransmit Rate | >15% HIGH, 5%~15% MEDIUM | HIGH/MEDIUM |
+| 2 | **Frame Quality** | RTS/CTS Overhead | RTS/CTS to data ratio >20% HIGH, >10% INFO | HIGH/INFO |
+| 2 | **Frame Quality** | WMM TID Imbalance | VO/VI >80% of QoS frames, BE/BK starved | MEDIUM |
 | 3 | **Protocol / BA** | BA Storm | >5 DELBAs in 1 second | HIGH |
 | 3 | **Protocol / BA** | BA Cycle | DELBA→ADDBA interval <2s, ≥3 times | HIGH |
 | 3 | **Protocol / BA** | ADDBA Failure | ADDBA Response returns failure status | MEDIUM |
@@ -268,7 +273,7 @@ The chart decomposes each second's WiFi traffic into four layers:
 
 A retransmit rate line (dark red) is overlaid to show correlation between retransmission and payload drops. Vertical markers highlight seconds where effective payload falls below 40%.
 
-Analysis dimensions include: signal strength distribution, 5-second window stability, noise floor, SNR estimation, retransmit frame vs normal frame signal comparison, frame size distribution (aggregation efficiency), data rate distribution, antenna distribution, per-second throughput and retransmit trend, and automatic diagnostic summary.
+Analysis dimensions include: signal strength distribution, 5-second window stability, noise floor, SNR estimation, retransmit frame vs normal frame signal comparison, frame size distribution (aggregation efficiency), data rate distribution, antenna distribution, per-second throughput and retransmit trend, **WMM TID/AC distribution**, **control frame breakdown** (RTS/CTS/ACK/BAR/BA), **FCS error analysis**, and automatic diagnostic summary.
 
 ## Pure Python, Zero Dependencies
 

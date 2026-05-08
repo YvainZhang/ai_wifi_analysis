@@ -38,19 +38,31 @@ def analyze_hw_metrics(filepath, target_macs=None):
     rate_data = defaultdict(lambda: defaultdict(int))  # mac -> rate -> count
 
     # Per-second aggregated stats
-    sec_stats = defaultdict(lambda: {
-        'data': 0, 'ctrl': 0, 'mgmt': 0,
-        'retransmit': 0, 'data_bytes': 0, 'total_bytes': 0,
-        'ctrl_bytes': 0, 'mgmt_bytes': 0, 'retransmit_bytes': 0,
-        'sig_samples': defaultdict(list),
-    })
+    def _new_sec():
+        return {
+            'data': 0, 'ctrl': 0, 'mgmt': 0,
+            'retransmit': 0, 'data_bytes': 0, 'total_bytes': 0,
+            'ctrl_bytes': 0, 'mgmt_bytes': 0, 'retransmit_bytes': 0,
+            'rts': 0, 'rts_bytes': 0, 'cts': 0, 'cts_bytes': 0,
+            'ack': 0, 'ack_bytes': 0, 'bar': 0, 'bar_bytes': 0,
+            'ba': 0, 'ba_bytes': 0,
+            'fcs_errors': 0, 'rate_sum': 0.0, 'rate_count': 0,
+            'sig_samples': defaultdict(list),
+        }
+    sec_stats = defaultdict(_new_sec)
 
     # Per-second signal per target MAC
     sec_signal = defaultdict(lambda: defaultdict(list))  # mac -> sec -> [signal]
 
-    # Retry frame signal vs non-retry signal (to see if retransmits correlate with low signal)
     retry_sig = defaultdict(list)    # mac -> [signal of retry frames]
     normal_sig = defaultdict(list)   # mac -> [signal of normal frames]
+
+    sec_tid_frames = defaultdict(lambda: defaultdict(int))   # sec -> tid -> count
+    sec_tid_bytes = defaultdict(lambda: defaultdict(int))    # sec -> tid -> bytes
+    sec_tid_retransmit = defaultdict(lambda: defaultdict(int))  # sec -> tid -> retransmit
+
+    last_seq = {}  # (mac, tid) -> last_seq_num
+    sec_seq_gaps = defaultdict(int)  # sec -> gap count
 
     first_ts = None
 
@@ -139,9 +151,23 @@ def analyze_hw_metrics(filepath, target_macs=None):
         if is_data:
             s['data'] += 1
             s['data_bytes'] += wifi_len
+            tid = wifi.get('qos_tid')
+            if tid is not None:
+                sec_tid_frames[sec][tid] += 1
+                sec_tid_bytes[sec][tid] += wifi_len
         elif is_ctrl:
             s['ctrl'] += 1
             s['ctrl_bytes'] += wifi_len
+            if fsub == 0xB:
+                s['rts'] += 1; s['rts_bytes'] += wifi_len
+            elif fsub == 0xC:
+                s['cts'] += 1; s['cts_bytes'] += wifi_len
+            elif fsub == 0xD:
+                s['ack'] += 1; s['ack_bytes'] += wifi_len
+            elif fsub == 0x8:
+                s['bar'] += 1; s['bar_bytes'] += wifi_len
+            elif fsub == 0x9:
+                s['ba'] += 1; s['ba_bytes'] += wifi_len
         elif is_mgmt:
             s['mgmt'] += 1
             s['mgmt_bytes'] += wifi_len
@@ -149,6 +175,26 @@ def analyze_hw_metrics(filepath, target_macs=None):
         if is_retry and is_data:
             s['retransmit'] += 1
             s['retransmit_bytes'] += wifi_len
+            tid = wifi.get('qos_tid')
+            if tid is not None:
+                sec_tid_retransmit[sec][tid] += 1
+        rx_flags = rtap.get('rx_flags', 0)
+        if rx_flags & 0x0001:
+            s['fcs_errors'] += 1
+        if rate is not None:
+            s['rate_sum'] += rate
+            s['rate_count'] += 1
+
+        # Sequence gap detection
+        if is_data and addr2 and 'seq_num' in wifi:
+            seq_key = (addr2_l, wifi.get('qos_tid', 0))
+            cur_sn = wifi['seq_num']
+            prev_sn = last_seq.get(seq_key, -1)
+            if prev_sn >= 0:
+                gap = (cur_sn - prev_sn) % 4096
+                if gap > 1 and gap < 2048:
+                    sec_seq_gaps[sec] += gap - 1
+            last_seq[seq_key] = cur_sn
 
     return {
         'sig_hist': dict(sig_hist),
@@ -164,6 +210,10 @@ def analyze_hw_metrics(filepath, target_macs=None):
         'sec_signal': dict(sec_signal),
         'retry_sig': dict(retry_sig),
         'normal_sig': dict(normal_sig),
+        'sec_tid_frames': dict(sec_tid_frames),
+        'sec_tid_bytes': dict(sec_tid_bytes),
+        'sec_tid_retransmit': dict(sec_tid_retransmit),
+        'sec_seq_gaps': dict(sec_seq_gaps),
         'duration': max(sec_stats.keys()) + 1 if sec_stats else 0,
     }
 
@@ -396,8 +446,76 @@ def print_report(results, target_macs):
         print(f"    {sec:>4d} | {s['data']:>6d} {s['ctrl']:>6d} {s['mgmt']:>5d} "
               f"{s['retransmit']:>5d} {rr:>6.1f}% | {data_kb:>7.0f} {total_kb:>7.0f}{flag}")
 
-    # 11. Summary diagnostics
-    print("\n## 11. 硬件指标诊断总结")
+    # 11. WMM / TID distribution
+    TID_AC = {0: 'BE', 1: 'BE', 2: 'BK', 3: 'BK', 4: 'VI', 5: 'VI', 6: 'VO', 7: 'VO'}
+    print("\n## 11. WMM 接入类别分布（TID → AC）")
+    agg_tid = defaultdict(int)
+    agg_tid_bytes = defaultdict(int)
+    agg_tid_re = defaultdict(int)
+    for sec in sorted(sec_stats.keys()):
+        for tid, cnt in results.get('sec_tid_frames', {}).get(sec, {}).items():
+            agg_tid[tid] += cnt
+        for tid, b in results.get('sec_tid_bytes', {}).get(sec, {}).items():
+            agg_tid_bytes[tid] += b
+        for tid, r in results.get('sec_tid_retransmit', {}).get(sec, {}).items():
+            agg_tid_re[tid] += r
+    if agg_tid:
+        total_qos = sum(agg_tid.values())
+        print(f"    {'TID':>3s} {'AC':>3s} {'帧数':>8s} {'占比':>7s} {'字节':>10s} {'重传':>6s} {'重传率':>7s}")
+        print("    " + "-" * 55)
+        for tid in sorted(agg_tid.keys()):
+            ac = TID_AC.get(tid, '??')
+            cnt = agg_tid[tid]
+            pct = cnt / total_qos * 100
+            bts = agg_tid_bytes.get(tid, 0)
+            re = agg_tid_re.get(tid, 0)
+            rr = re / cnt * 100 if cnt else 0
+            flag = " ⚠" if rr > 15 else ""
+            print(f"    {tid:>3d} {ac:>3s} {cnt:>8d} {pct:>6.1f}% {bts:>10d} {re:>6d} {rr:>6.1f}%{flag}")
+    else:
+        print("    无 QoS Data 帧（或 TID 未解析）")
+
+    # 12. Control frame detail
+    print("\n## 12. 控制帧细分")
+    agg_ctrl = {'RTS': 0, 'CTS': 0, 'ACK': 0, 'BAR': 0, 'BA': 0}
+    for sec in sorted(sec_stats.keys()):
+        s = sec_stats[sec]
+        for k in agg_ctrl:
+            agg_ctrl[k] += s.get(k.lower(), 0)
+    total_ctrl = sum(agg_ctrl.values())
+    if total_ctrl:
+        for k, v in agg_ctrl.items():
+            pct = v / total_ctrl * 100
+            print(f"    {k:>4s}: {v:>6d} ({pct:>5.1f}%)")
+        rts_cts = agg_ctrl['RTS'] + agg_ctrl['CTS']
+        total_data = sum(s['data'] for s in sec_stats.values())
+        if total_data:
+            ratio = rts_cts / total_data * 100
+            flag = " ⚠ 隐藏节点或高竞争" if ratio > 20 else ""
+            print(f"    → RTS/CTS 与数据帧比: {ratio:.1f}%{flag}")
+    else:
+        print("    无控制帧")
+
+    # 13. FCS error analysis
+    print("\n## 13. FCS / 误码分析")
+    total_fcs = sum(s.get('fcs_errors', 0) for s in sec_stats.values())
+    total_frames = sum(s['data'] + s['ctrl'] + s['mgmt'] for s in sec_stats.values())
+    if total_fcs > 0:
+        fcs_rate = total_fcs / (total_frames + total_fcs) * 100
+        severity = "⚠⚠ 极高" if fcs_rate > 5 else "⚠ 较高" if fcs_rate > 1 else "轻微"
+        print(f"    FCS 错误帧: {total_fcs} (错误率 {fcs_rate:.2f}% — {severity})")
+        fcs_secs = [(sec, sec_stats[sec].get('fcs_errors', 0))
+                     for sec in sorted(sec_stats.keys()) if sec_stats[sec].get('fcs_errors', 0) > 0]
+        if fcs_secs:
+            samples = [f"{s}s({c})" for s, c in fcs_secs[:10]]
+            print(f"    分布: {', '.join(samples)}")
+    elif results.get('rtap_fields', {}).get('rx_flags', 0) > 0:
+        print("    FCS 错误帧: 0（抓包中 rx_flags 可用，无误码）")
+    else:
+        print("    抓包中无 rx_flags 字段，无法检测 FCS 错误")
+
+    # 14. Summary diagnostics
+    print("\n## 14. 硬件指标诊断总结")
     issues = []
     for mac in target_macs:
         mac_l = mac.lower()
@@ -473,8 +591,8 @@ def print_report(results, target_macs):
 def generate_payload_chart(sec_stats, output_path, zh=False):
     """Generate SVG stacked-area chart of effective payload ratio over time.
 
-    Breaks down WiFi airtime into: effective payload, retransmit overhead,
-    control overhead (RTS/CTS/ACK/BAR/BA), management overhead (Beacon/Probe/...).
+    Breaks down WiFi airtime into 6 layers: effective payload, retransmit,
+    RTS/CTS (contention), BAR/BA (BA session), ACK, management.
     """
     data = []
     for sec in sorted(sec_stats.keys()):
@@ -483,6 +601,11 @@ def generate_payload_chart(sec_stats, output_path, zh=False):
         cb = s.get('ctrl_bytes', 0)
         mb = s.get('mgmt_bytes', 0)
         rb = s.get('retransmit_bytes', 0)
+        rts_b = s.get('rts_bytes', 0)
+        cts_b = s.get('cts_bytes', 0)
+        ack_b = s.get('ack_bytes', 0)
+        bar_b = s.get('bar_bytes', 0)
+        ba_b = s.get('ba_bytes', 0)
         wifi_total = db + cb + mb
         if wifi_total == 0:
             continue
@@ -491,9 +614,14 @@ def generate_payload_chart(sec_stats, output_path, zh=False):
             'sec': sec,
             'payload': unique / wifi_total * 100,
             'retransmit': rb / wifi_total * 100,
-            'ctrl': cb / wifi_total * 100,
+            'rts_cts': (rts_b + cts_b) / wifi_total * 100,
+            'bar_ba': (bar_b + ba_b) / wifi_total * 100,
+            'ack': ack_b / wifi_total * 100,
             'mgmt': mb / wifi_total * 100,
             'rr': s['retransmit'] / s['data'] * 100 if s['data'] else 0,
+            'fcs': s.get('fcs_errors', 0),
+            'gaps': 0,
+            'rate': s['rate_sum'] / s['rate_count'] if s.get('rate_count') else 0,
         })
 
     if not data:
@@ -509,9 +637,14 @@ def generate_payload_chart(sec_stats, output_path, zh=False):
                 'sec': chunk[0]['sec'],
                 'payload': sum(d['payload'] for d in chunk) / len(chunk),
                 'retransmit': sum(d['retransmit'] for d in chunk) / len(chunk),
-                'ctrl': sum(d['ctrl'] for d in chunk) / len(chunk),
+                'rts_cts': sum(d['rts_cts'] for d in chunk) / len(chunk),
+                'bar_ba': sum(d['bar_ba'] for d in chunk) / len(chunk),
+                'ack': sum(d['ack'] for d in chunk) / len(chunk),
                 'mgmt': sum(d['mgmt'] for d in chunk) / len(chunk),
                 'rr': sum(d['rr'] for d in chunk) / len(chunk),
+                'fcs': sum(d['fcs'] for d in chunk),
+                'gaps': 0,
+                'rate': sum(d['rate'] for d in chunk) / len(chunk),
             })
         data = binned
 
@@ -529,9 +662,11 @@ def generate_payload_chart(sec_stats, output_path, zh=False):
 
     layers = [
         ('payload', '#22c55e', '有效载荷' if zh else 'Effective Payload'),
-        ('retransmit', '#ef4444', '重传开销' if zh else 'Retransmit'),
-        ('ctrl', '#3b82f6', '控制帧开销' if zh else 'Control (ACK/RTS/CTS/BA)'),
-        ('mgmt', '#a855f7', '管理帧开销' if zh else 'Management (Beacon/Probe)'),
+        ('retransmit', '#ef4444', '重传' if zh else 'Retransmit'),
+        ('rts_cts', '#f97316', 'RTS/CTS 竞争' if zh else 'RTS/CTS Contention'),
+        ('bar_ba', '#6366f1', 'BAR/BA 会话' if zh else 'BAR/BA Session'),
+        ('ack', '#3b82f6', 'ACK' if zh else 'ACK'),
+        ('mgmt', '#a855f7', '管理帧' if zh else 'Management'),
     ]
 
     cum = [0.0] * n
@@ -567,6 +702,11 @@ def generate_payload_chart(sec_stats, output_path, zh=False):
             x = xp(i)
             L.append(f'  <line x1="{x:.1f}" y1="{MT}" x2="{x:.1f}" y2="{MB}" stroke="#ef4444" stroke-width="0.6" stroke-dasharray="3,2" opacity="0.45"/>')
 
+    for i, d in enumerate(data):
+        if d.get('fcs', 0) > 0:
+            x = xp(i)
+            L.append(f'  <line x1="{x:.1f}" y1="{MT}" x2="{x:.1f}" y2="{MB}" stroke="#eab308" stroke-width="0.8" opacity="0.5"/>')
+
     rr_pts = " ".join(f"{xp(i):.1f},{yp(min(d['rr'], 100)):.1f}" for i, d in enumerate(data))
     L.append(f'  <polyline points="{rr_pts}" fill="none" stroke="#b91c1c" stroke-width="1.2" opacity="0.6"/>')
     L.append(f'  <line x1="{MR + 8}" y1="{yp(0):.1f}" x2="{MR + 8}" y2="{yp(50):.1f}" stroke="#b91c1c" stroke-width="0.8" opacity="0.4"/>')
@@ -591,18 +731,23 @@ def generate_payload_chart(sec_stats, output_path, zh=False):
 
     legend_y = MB + 46
     for i, (_, color, label) in enumerate(layers):
-        x = ML + i * 195
+        x = ML + i * 140
         L.append(f'  <rect x="{x}" y="{legend_y - 7}" width="11" height="11" rx="2" fill="{color}" opacity="0.78"/>')
-        L.append(f'  <text x="{x + 15}" y="{legend_y + 3}" font-size="9" fill="#374151">{label}</text>')
+        L.append(f'  <text x="{x + 15}" y="{legend_y + 3}" font-size="8.5" fill="#374151">{label}</text>')
 
     avg_p = sum(d['payload'] for d in data) / n
     avg_r = sum(d['retransmit'] for d in data) / n
+    avg_ct = sum(d['rts_cts'] for d in data) / n
+    total_fcs = sum(d.get('fcs', 0) for d in data)
     dur = data[-1]['sec'] - data[0]['sec']
     if zh:
-        summary = f'平均有效率 {avg_p:.1f}% | 平均重传开销 {avg_r:.1f}% | 时长 {dur}s ({n}个采样)'
+        summary = f'平均有效率 {avg_p:.1f}% | 重传 {avg_r:.1f}% | 竞争 {avg_ct:.1f}% | FCS错误 {total_fcs} | 时长 {dur}s'
     else:
-        summary = f'Avg payload {avg_p:.1f}% | Avg retransmit overhead {avg_r:.1f}% | Duration {dur}s ({n} samples)'
+        summary = f'Avg payload {avg_p:.1f}% | Retransmit {avg_r:.1f}% | Contention {avg_ct:.1f}% | FCS errors {total_fcs} | Duration {dur}s'
     L.append(f'  <text x="{ML}" y="{legend_y + 22}" font-size="8.5" fill="#6b7280">{summary}</text>')
+    fcs_label = 'FCS错误' if zh else 'FCS Error'
+    L.append(f'  <line x1="{MR - 140}" y1="{legend_y - 2}" x2="{MR - 120}" y2="{legend_y - 2}" stroke="#eab308" stroke-width="0.8" opacity="0.6"/>')
+    L.append(f'  <text x="{MR - 116}" y="{legend_y + 2}" font-size="8" fill="#92400e">{fcs_label}</text>')
     L.append('</svg>')
 
     with open(output_path, 'w') as f:

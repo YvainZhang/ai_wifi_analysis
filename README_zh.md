@@ -175,6 +175,8 @@ python3 wifi_analyzer.py <目录> --type ba
 | **断连/关联** | Deauth/Disassoc reason code、Auth/Assoc status code | analyze.py |
 | **DHCP** | DORA 完整性、NAK/超时/无响应、多轮交互、每步耗时 | analyze.py |
 | **空口效率** | 数据帧占比、管理帧/控制帧开销、有效吞吐估算 | analyze.py |
+| **竞争分析** | RTS/CTS 与数据帧比、WMM TID(VO/VI/BE/BK) 分布、BAR/BA 会话开销 | analyze.py + hw_metrics.py |
+| **误码分析** | FCS 错误帧检测（rx_flags）、隐式重传（序列号间隙）、误码与信号质量关联 | analyze.py + hw_metrics.py |
 | **硬件指标** | 信号直方图、5秒窗口稳定性、噪声底噪、重传帧信号对比、速率分布、天线分布、每秒趋势 | hw_metrics.py |
 
 ### 自动检测阈值（因果层级 — 自底向上排查）
@@ -185,7 +187,10 @@ python3 wifi_analyzer.py <目录> --type ba
 |------|----|--------|------|--------|
 | 1 (底层) | **射频质量** | 弱信号 | < -70 dBm | MEDIUM |
 | 1 | **射频质量** | 信号突变 | 突降 >15 dBm | INFO |
+| 1 | **射频质量** | FCS 错误 | FCS 错误率 >1% MEDIUM, >5% HIGH | MEDIUM/HIGH |
 | 2 | **帧质量** | 高重传率 | >15% HIGH，5%~15% MEDIUM | HIGH/MEDIUM |
+| 2 | **帧质量** | RTS/CTS 开销 | RTS/CTS 与数据帧比 >20% HIGH, >10% INFO | HIGH/INFO |
+| 2 | **帧质量** | WMM TID 不均 | VO/VI 占 QoS 帧 >80%，BE/BK 被挤压 | MEDIUM |
 | 3 | **协议/Block Ack** | BA 风暴 | 1 秒内 >5 个 DELBA | HIGH |
 | 3 | **协议/Block Ack** | BA 循环 | DELBA→ADDBA 间隔 <2s，≥3 次 | HIGH |
 | 3 | **协议/Block Ack** | ADDBA 失败 | ADDBA Response 返回失败状态 | MEDIUM |
@@ -266,7 +271,7 @@ python3 hw_metrics.py capture.pcapng --chart payload_chart.svg
 
 图表上叠加一条重传率曲线（深红色），用于展示重传与有效载荷下降的关联。当有效率低于 40% 时会标注垂直警示线。
 
-分析维度包括：信号强度分布、5 秒窗口稳定性、噪声底噪、SNR 估算、重传帧与正常帧信号对比、帧大小分布（聚合效率）、数据速率分布、天线分布、每秒吞吐与重传趋势，以及自动诊断总结。
+分析维度包括：信号强度分布、5 秒窗口稳定性、噪声底噪、SNR 估算、重传帧与正常帧信号对比、帧大小分布（聚合效率）、数据速率分布、天线分布、每秒吞吐与重传趋势、**WMM TID/接入类别分布**、**控制帧细分**（RTS/CTS/ACK/BAR/BA）、**FCS 误码分析**，以及自动诊断总结。
 
 ## 纯 Python，零依赖
 

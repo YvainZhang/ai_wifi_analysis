@@ -274,8 +274,19 @@ def parse_radiotap(raw):
                     info['channel_freq'] = freq
                     off += 8
                 elif bit >= 15:
-                    # Unknown / vendor field — can't determine size, abort
-                    break
+                    _RT_SIZES = {15: 2, 16: 1, 17: 1, 19: 4, 21: 12, 22: 8}
+                    if bit in _RT_SIZES:
+                        sz = _RT_SIZES[bit]
+                        if off + sz <= hdr_len:
+                            if bit == 19:
+                                info['mcs_known'] = raw[off]
+                                info['mcs_flags'] = raw[off + 1]
+                                info['mcs_index'] = raw[off + 2]
+                            off += sz
+                        else:
+                            break
+                    else:
+                        break
             except struct.error:
                 break
 
@@ -594,9 +605,14 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
     assoc_events = []
     dhcp_events = []
     signal_data = defaultdict(list)
-    seq_tracker = defaultdict(lambda: -1)  # (mac, tid) -> last seq
+    seq_tracker = defaultdict(lambda: -1)
     retransmit_stats = defaultdict(int)
-    data_timestamps = defaultdict(list)  # mac -> [timestamps]
+    data_timestamps = defaultdict(list)
+    ctrl_stats = defaultdict(int)
+    tid_frames = defaultdict(int)
+    tid_retransmit = defaultdict(int)
+    fcs_errors = 0
+    implicit_retransmit = defaultdict(int)
     first_ts = None
     last_ts = None
     total = 0
@@ -646,13 +662,44 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
         frame_stats[key] += 1
         frame_stats[wifi['type_name']] += 1
 
+        # Control frame subtype tracking
+        if wifi['type'] == 1:
+            for sn, sn_name in [(0xB, 'RTS'), (0xC, 'CTS'), (0xD, 'ACK'),
+                                (0x8, 'BAR'), (0x9, 'BA')]:
+                if wifi['subtype'] == sn:
+                    ctrl_stats[sn_name] += 1
+                    break
+
+        # TID distribution (QoS Data frames)
+        tid = wifi.get('qos_tid')
+        if tid is not None:
+            tid_frames[tid] += 1
+
+        # FCS error detection
+        rx_flags = rtap.get('rx_flags', 0)
+        if rx_flags & 0x0001:
+            fcs_errors += 1
+            continue
+
         # Signal
         if 'dbm_signal' in rtap and addr2:
             signal_data[addr2].append((rel_ts, rtap['dbm_signal']))
 
         # Sequence tracking for retransmit detection
-        if 'seq_num' in wifi and addr2 and wifi.get('retry'):
+        if wifi.get('retry') and 'seq_num' in wifi and addr2:
             retransmit_stats[addr2] += 1
+            if tid is not None:
+                tid_retransmit[tid] += 1
+
+        # Implicit retransmit / seq gap detection
+        if 'seq_num' in wifi and addr2 and wifi['type'] == DATA:
+            track_key = (addr2, tid if tid is not None else 0)
+            last_sn = seq_tracker[track_key]
+            cur_sn = wifi['seq_num']
+            if last_sn >= 0:
+                if cur_sn < last_sn and not wifi.get('retry'):
+                    implicit_retransmit[addr2] += 1
+            seq_tracker[track_key] = cur_sn
 
         # Data flow tracking
         if wifi['type'] == DATA and addr2:
@@ -714,6 +761,11 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
             'interfaces': reader.interfaces,
         },
         'frame_stats': dict(frame_stats),
+        'ctrl_stats': dict(ctrl_stats),
+        'tid_frames': dict(tid_frames),
+        'tid_retransmit': dict(tid_retransmit),
+        'fcs_errors': fcs_errors,
+        'implicit_retransmit': dict(implicit_retransmit),
         'ba_events': ba_events,
         'disconnect_events': disconnect_events,
         'assoc_events': assoc_events,
