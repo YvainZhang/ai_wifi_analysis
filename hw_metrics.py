@@ -41,7 +41,8 @@ def analyze_hw_metrics(filepath, target_macs=None):
     sec_stats = defaultdict(lambda: {
         'data': 0, 'ctrl': 0, 'mgmt': 0,
         'retransmit': 0, 'data_bytes': 0, 'total_bytes': 0,
-        'sig_samples': defaultdict(list),  # mac -> [signals]
+        'ctrl_bytes': 0, 'mgmt_bytes': 0, 'retransmit_bytes': 0,
+        'sig_samples': defaultdict(list),
     })
 
     # Per-second signal per target MAC
@@ -140,11 +141,14 @@ def analyze_hw_metrics(filepath, target_macs=None):
             s['data_bytes'] += wifi_len
         elif is_ctrl:
             s['ctrl'] += 1
+            s['ctrl_bytes'] += wifi_len
         elif is_mgmt:
             s['mgmt'] += 1
+            s['mgmt_bytes'] += wifi_len
         s['total_bytes'] += total_len
         if is_retry and is_data:
             s['retransmit'] += 1
+            s['retransmit_bytes'] += wifi_len
 
     return {
         'sig_hist': dict(sig_hist),
@@ -466,19 +470,169 @@ def print_report(results, target_macs):
         print("  未发现硬件层异常")
 
 
-if __name__ == '__main__':
-    if len(sys.argv) < 2:
-        print("Usage: python3 hw_metrics.py <pcapng> [mac1] [mac2] ...")
-        sys.exit(1)
+def generate_payload_chart(sec_stats, output_path, zh=False):
+    """Generate SVG stacked-area chart of effective payload ratio over time.
 
-    path = sys.argv[1]
-    targets = sys.argv[2:] if len(sys.argv) > 2 else []
+    Breaks down WiFi airtime into: effective payload, retransmit overhead,
+    control overhead (RTS/CTS/ACK/BAR/BA), management overhead (Beacon/Probe/...).
+    """
+    data = []
+    for sec in sorted(sec_stats.keys()):
+        s = sec_stats[sec]
+        db = s['data_bytes']
+        cb = s.get('ctrl_bytes', 0)
+        mb = s.get('mgmt_bytes', 0)
+        rb = s.get('retransmit_bytes', 0)
+        wifi_total = db + cb + mb
+        if wifi_total == 0:
+            continue
+        unique = db - rb
+        data.append({
+            'sec': sec,
+            'payload': unique / wifi_total * 100,
+            'retransmit': rb / wifi_total * 100,
+            'ctrl': cb / wifi_total * 100,
+            'mgmt': mb / wifi_total * 100,
+            'rr': s['retransmit'] / s['data'] * 100 if s['data'] else 0,
+        })
 
+    if not data:
+        print("  No data for chart generation")
+        return
+
+    if len(data) > 120:
+        bin_sz = 5 if len(data) <= 600 else 10
+        binned = []
+        for i in range(0, len(data), bin_sz):
+            chunk = data[i:i + bin_sz]
+            binned.append({
+                'sec': chunk[0]['sec'],
+                'payload': sum(d['payload'] for d in chunk) / len(chunk),
+                'retransmit': sum(d['retransmit'] for d in chunk) / len(chunk),
+                'ctrl': sum(d['ctrl'] for d in chunk) / len(chunk),
+                'mgmt': sum(d['mgmt'] for d in chunk) / len(chunk),
+                'rr': sum(d['rr'] for d in chunk) / len(chunk),
+            })
+        data = binned
+
+    W, H = 960, 460
+    ML, MR, MT, MB = 65, 890, 48, 345
+    CW, CH = MR - ML, MB - MT
+    n = len(data)
+    dx = CW / max(n - 1, 1)
+
+    def xp(i):
+        return ML + i * dx
+
+    def yp(pct):
+        return MB - pct / 100 * CH
+
+    layers = [
+        ('payload', '#22c55e', '有效载荷' if zh else 'Effective Payload'),
+        ('retransmit', '#ef4444', '重传开销' if zh else 'Retransmit'),
+        ('ctrl', '#3b82f6', '控制帧开销' if zh else 'Control (ACK/RTS/CTS/BA)'),
+        ('mgmt', '#a855f7', '管理帧开销' if zh else 'Management (Beacon/Probe)'),
+    ]
+
+    cum = [0.0] * n
+    polys = []
+    for key, color, label in layers:
+        bot = cum[:]
+        top = [cum[i] + data[i][key] for i in range(n)]
+        pts = []
+        for i in range(n):
+            pts.append(f"{xp(i):.1f},{yp(top[i]):.1f}")
+        for i in range(n - 1, -1, -1):
+            pts.append(f"{xp(i):.1f},{yp(bot[i]):.1f}")
+        polys.append((pts, color, label))
+        cum = top
+
+    L = []
+    L.append(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}">')
+    L.append('  <style>text{font-family:"Helvetica Neue",Helvetica,Arial,sans-serif}</style>')
+    L.append(f'  <rect width="{W}" height="{H}" fill="#fff"/>')
+    title = 'WiFi 空口效率 — 有效载荷时间分布' if zh else 'WiFi Airtime Efficiency \u2014 Payload Ratio Over Time'
+    L.append(f'  <text x="{W // 2}" y="26" text-anchor="middle" font-size="14" font-weight="600" fill="#111827">{title}</text>')
+
+    for pct in (0, 25, 50, 75, 100):
+        y = yp(pct)
+        L.append(f'  <line x1="{ML}" y1="{y:.1f}" x2="{MR}" y2="{y:.1f}" stroke="#e5e7eb" stroke-width="0.5"/>')
+        L.append(f'  <text x="{ML - 5}" y="{y + 3.5:.1f}" text-anchor="end" font-size="9" fill="#6b7280">{pct}%</text>')
+
+    for pts, color, _ in polys:
+        L.append(f'  <polygon points="{" ".join(pts)}" fill="{color}" opacity="0.78"/>')
+
+    for i, d in enumerate(data):
+        if d['payload'] < 40:
+            x = xp(i)
+            L.append(f'  <line x1="{x:.1f}" y1="{MT}" x2="{x:.1f}" y2="{MB}" stroke="#ef4444" stroke-width="0.6" stroke-dasharray="3,2" opacity="0.45"/>')
+
+    rr_pts = " ".join(f"{xp(i):.1f},{yp(min(d['rr'], 100)):.1f}" for i, d in enumerate(data))
+    L.append(f'  <polyline points="{rr_pts}" fill="none" stroke="#b91c1c" stroke-width="1.2" opacity="0.6"/>')
+    L.append(f'  <line x1="{MR + 8}" y1="{yp(0):.1f}" x2="{MR + 8}" y2="{yp(50):.1f}" stroke="#b91c1c" stroke-width="0.8" opacity="0.4"/>')
+    rr_label = '重传率' if zh else 'Retransmit Rate'
+    L.append(f'  <text x="{MR + 12}" y="{yp(25):.1f}" font-size="7" fill="#b91c1c" opacity="0.7" transform="rotate(-90,{MR + 12},{yp(25):.1f})">{rr_label}</text>')
+
+    L.append(f'  <line x1="{ML}" y1="{MB}" x2="{MR}" y2="{MB}" stroke="#374151" stroke-width="1"/>')
+    L.append(f'  <line x1="{ML}" y1="{MT}" x2="{ML}" y2="{MB}" stroke="#374151" stroke-width="1"/>')
+
+    x_step = max(1, n // 12)
+    for i in range(0, n, x_step):
+        x = xp(i)
+        sec = data[i]['sec']
+        L.append(f'  <text x="{x:.1f}" y="{MB + 14}" text-anchor="middle" font-size="8.5" fill="#6b7280">{sec}s</text>')
+    if (n - 1) % x_step != 0:
+        x = xp(n - 1)
+        sec = data[-1]['sec']
+        L.append(f'  <text x="{x:.1f}" y="{MB + 14}" text-anchor="middle" font-size="8.5" fill="#6b7280">{sec}s</text>')
+
+    time_label = '时间' if zh else 'Time'
+    L.append(f'  <text x="{(ML + MR) // 2}" y="{MB + 28}" text-anchor="middle" font-size="9" fill="#9ca3af">{time_label}</text>')
+
+    legend_y = MB + 46
+    for i, (_, color, label) in enumerate(layers):
+        x = ML + i * 195
+        L.append(f'  <rect x="{x}" y="{legend_y - 7}" width="11" height="11" rx="2" fill="{color}" opacity="0.78"/>')
+        L.append(f'  <text x="{x + 15}" y="{legend_y + 3}" font-size="9" fill="#374151">{label}</text>')
+
+    avg_p = sum(d['payload'] for d in data) / n
+    avg_r = sum(d['retransmit'] for d in data) / n
+    dur = data[-1]['sec'] - data[0]['sec']
+    if zh:
+        summary = f'平均有效率 {avg_p:.1f}% | 平均重传开销 {avg_r:.1f}% | 时长 {dur}s ({n}个采样)'
+    else:
+        summary = f'Avg payload {avg_p:.1f}% | Avg retransmit overhead {avg_r:.1f}% | Duration {dur}s ({n} samples)'
+    L.append(f'  <text x="{ML}" y="{legend_y + 22}" font-size="8.5" fill="#6b7280">{summary}</text>')
+    L.append('</svg>')
+
+    with open(output_path, 'w') as f:
+        f.write('\n'.join(L))
+    print(f"  Chart: {output_path}")
+
+    import subprocess, shutil
+    png_path = output_path.replace('.svg', '.png')
+    if shutil.which('rsvg-convert'):
+        try:
+            subprocess.run(['rsvg-convert', '-w', '2400', output_path, '-o', png_path], check=True, capture_output=True)
+            print(f"  PNG:   {png_path}")
+        except Exception:
+            pass
+    import argparse
+    ap = argparse.ArgumentParser(description='Hardware-level WiFi metrics from pcapng')
+    ap.add_argument('pcapng', help='pcapng capture file')
+    ap.add_argument('macs', nargs='*', help='Filter by MAC address(es)')
+    ap.add_argument('--chart', metavar='SVG', help='Generate payload-ratio chart (SVG path)')
+    args = ap.parse_args()
+
+    path = args.pcapng
     formatted = []
-    for m in targets:
+    for m in (args.macs or []):
         if ':' not in m:
-            m = ':'.join(m[i:i+2] for i in range(0, len(m), 2))
+            m = ':'.join(m[i:i + 2] for i in range(0, len(m), 2))
         formatted.append(m.lower())
 
     results = analyze_hw_metrics(path, formatted)
     print_report(results, formatted)
+
+    if args.chart:
+        generate_payload_chart(results['sec_stats'], args.chart)

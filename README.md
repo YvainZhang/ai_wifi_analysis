@@ -252,6 +252,22 @@ python3 hw_metrics.py capture.pcapng
 python3 hw_metrics.py capture.pcapng AA:BB:CC:DD:EE:FF
 ```
 
+### Payload Ratio Chart
+
+Generate a time-based stacked-area chart showing WiFi airtime efficiency breakdown:
+
+```bash
+python3 hw_metrics.py capture.pcapng --chart payload_chart.svg
+```
+
+The chart decomposes each second's WiFi traffic into four layers:
+- **Effective Payload** (green) — unique data bytes actually carrying useful information
+- **Retransmit Overhead** (red) — bytes wasted on retransmitted frames (bit errors, collisions)
+- **Control Overhead** (blue) — ACK / RTS / CTS / BAR / BlockAck protocol frames (contention, acknowledgment)
+- **Management Overhead** (purple) — Beacon / Probe / Auth / Assoc housekeeping frames
+
+A retransmit rate line (dark red) is overlaid to show correlation between retransmission and payload drops. Vertical markers highlight seconds where effective payload falls below 40%.
+
 Analysis dimensions include: signal strength distribution, 5-second window stability, noise floor, SNR estimation, retransmit frame vs normal frame signal comparison, frame size distribution (aggregation efficiency), data rate distribution, antenna distribution, per-second throughput and retransmit trend, and automatic diagnostic summary.
 
 ## Pure Python, Zero Dependencies

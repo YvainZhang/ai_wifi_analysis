@@ -250,6 +250,22 @@ python3 hw_metrics.py capture.pcapng
 python3 hw_metrics.py capture.pcapng AA:BB:CC:DD:EE:FF
 ```
 
+### 有效载荷占比图
+
+生成以时间为基线的堆叠面积图，展示 WiFi 空口效率分解：
+
+```bash
+python3 hw_metrics.py capture.pcapng --chart payload_chart.svg
+```
+
+图表将每秒的 WiFi 流量分解为四层：
+- **有效载荷**（绿色）— 实际传输有用信息的唯一数据字节
+- **重传开销**（红色）— 因误码、碰撞等原因重传浪费的字节
+- **控制帧开销**（蓝色）— ACK / RTS / CTS / BAR / BlockAck 等协议帧（信道竞争、确认应答）
+- **管理帧开销**（紫色）— Beacon / Probe / Auth / Assoc 等管理帧
+
+图表上叠加一条重传率曲线（深红色），用于展示重传与有效载荷下降的关联。当有效率低于 40% 时会标注垂直警示线。
+
 分析维度包括：信号强度分布、5 秒窗口稳定性、噪声底噪、SNR 估算、重传帧与正常帧信号对比、帧大小分布（聚合效率）、数据速率分布、天线分布、每秒吞吐与重传趋势，以及自动诊断总结。
 
 ## 纯 Python，零依赖
