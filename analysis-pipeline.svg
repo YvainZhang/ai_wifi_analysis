@@ -26,7 +26,7 @@
   <g filter="url(#sh)"><rect x="240" y="141" width="130" height="28" rx="5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.2"/><text x="305" y="160" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e40af">MAC Header</text></g>
   <g filter="url(#sh)"><rect x="400" y="141" width="130" height="28" rx="5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.2"/><text x="465" y="160" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e40af">Action Frame BA</text></g>
   <g filter="url(#sh)"><rect x="560" y="141" width="130" height="28" rx="5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.2"/><text x="625" y="160" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e40af">Control Frame</text></g>
-  <g filter="url(#sh)"><rect x="720" y="141" width="130" height="28" rx="5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.2"/><text x="785" y="160" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e40af">DHCP Deep Parse</text></g>
+  <g filter="url(#sh)"><rect x="720" y="141" width="130" height="28" rx="5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.2"/><text x="785" y="160" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1e40af">DHCP/TCP Parse</text></g>
   <g filter="url(#sh)"><rect x="880" y="141" width="130" height="28" rx="5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.2"/><text x="945" y="160" text-anchor="middle" font-size="10.5" font-weight="600" fill="#7c2d12">Frame Type Classify</text></g>
   <text x="1050" y="153" font-size="9" fill="#6b7280">ADDBA / DELBA / TID</text>
   <text x="1050" y="166" font-size="9" fill="#6b7280">RTS/CTS/ACK/BAR</text>
@@ -76,8 +76,8 @@
     <rect x="948" y="218" width="175" height="56" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
     <text x="1035" y="236" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">Retransmit/Timing</text>
     <text x="956" y="250" font-size="8.5" fill="#4b5563">Per-MAC retransmit count</text>
-    <text x="956" y="260" font-size="8.5" fill="#4b5563">retransmit rate</text>
-    <text x="956" y="270" font-size="8.5" fill="#4b5563">data_timestamps</text>
+    <text x="956" y="260" font-size="8.5" fill="#4b5563">802.11 retry rate</text>
+    <text x="956" y="270" font-size="8.5" fill="#4b5563">TCP flow retransmit stats</text>
   </g>
   <path d="M 132 272 L 132 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
   <path d="M 312 272 L 312 300" stroke="#9333ea" stroke-width="1" fill="none" marker-end="url(#ap)"/>
@@ -121,10 +121,10 @@
   </g>
   <g filter="url(#sh)">
     <rect x="725" y="373" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
-    <text x="830" y="389" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">DHCP Issues</text>
+    <text x="830" y="389" text-anchor="middle" font-size="10.5" font-weight="600" fill="#6d28d9">DHCP/TCP Issues</text>
     <text x="733" y="402" font-size="8.5" fill="#6b7280">NAK · No Offer</text>
     <text x="733" y="412" font-size="8.5" fill="#6b7280">Request NAKed</text>
-    <text x="733" y="422" font-size="8.5" fill="#6b7280">Multi-round DORA·Retransmit</text>
+    <text x="733" y="422" font-size="8.5" fill="#6b7280">Multi-round DORA·TCP retx</text>
   </g>
   <g filter="url(#sh)">
     <rect x="940" y="373" width="210" height="70" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
@@ -160,8 +160,8 @@
     <rect x="210" y="486" width="190" height="26" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.2"/>
     <text x="305" y="504" text-anchor="middle" font-size="10.5" font-weight="600" fill="#991b1b">B. Frame Quality (Must-Check)</text>
     <text x="220" y="526" font-size="9" font-weight="600" fill="#374151">B1 Retransmit Analysis</text>
-    <text x="220" y="539" font-size="8" fill="#6b7280">&lt;5% normal · 5~15% elevated</text>
-    <text x="220" y="551" font-size="8" fill="#6b7280">&gt;15% severe · trend changes</text>
+    <text x="220" y="539" font-size="8" fill="#6b7280">802.11 retry: &lt;5% normal</text>
+    <text x="220" y="551" font-size="8" fill="#6b7280">TCP retx: &gt;3% elevated</text>
     <text x="220" y="566" font-size="9" font-weight="600" fill="#374151">B2 Signal &amp; Noise</text>
     <text x="220" y="579" font-size="8" fill="#6b7280">Weak signal &lt;-70dBm</text>
     <text x="220" y="591" font-size="8" fill="#6b7280">Sudden drop &gt;10dBm · SNR</text>

@@ -158,9 +158,9 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 | Layer | Description | Key Content |
 |-------|-------------|-------------|
 | **L1 Raw Capture** | pcapng / pcap / OmniPeek .pkt | Contains Radiotap headers (signal, noise, channel, rate, antenna) |
-| **L2 Frame Decode** | 802.11 MAC Header + Control + DHCP | Radiotap parsing, MAC frames, BA Action, **RTS/CTS/ACK/BAR**, DHCP Deep Parse |
-| **L3 Data Extraction** | Unified Result Dict | Frame statistics (all subtypes), BA events, disconnect/assoc, DHCP interactions, signal data, retransmit stats |
-| **L4 Auto Detection** | `detect_*_issues()` automatic anomaly detection | BA storm/cycle, frequent disconnection, weak signal/high retransmit, DHCP NAK/multi-round |
+| **L2 Frame Decode** | 802.11 MAC Header + Control + DHCP/TCP | Radiotap parsing, MAC frames, BA Action, **RTS/CTS/ACK/BAR**, DHCP Deep Parse, plain IPv4/TCP metadata extraction |
+| **L3 Data Extraction** | Unified Result Dict | Frame statistics (all subtypes), BA events, disconnect/assoc, DHCP interactions, signal data, 802.11 retransmit stats, TCP flow retransmit stats |
+| **L4 Auto Detection** | `detect_*_issues()` automatic anomaly detection | BA storm/cycle, frequent disconnection, weak signal/high retransmit, DHCP NAK/multi-round, TCP high retransmission |
 | **L5 Analysis Framework** | AI + Manual 6-dimension analysis | A.Connection Flow B.Frame Quality (must-check: retransmit/signal/aggregation/**control frames RTS-CTS-ACK**) C.Block Ack D.DHCP E.Air Efficiency **F.Hardware Metrics** |
 | **L6 Root Cause** | Cross-layer causal chain reconstruction (bottom-up: RF→Frame→Protocol→Connectivity) | Layered attribution, causal chain building, cross-validation, issue ownership, recommendations |
 
@@ -169,7 +169,8 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 | Dimension | Analysis Content | Data Source |
 |-----------|------------------|-------------|
 | **Frame Statistics** | Beacon/Probe/Auth/Assoc/RTS/CTS/ACK/BAR/QoS Data/Null/Action/Deauth/Disassoc all subtype counts and ratios | analyze.py |
-| **Retransmit Analysis** | Per-MAC retransmit rate, trend changes, time correlation with BA/disconnect events | analyze.py |
+| **802.11 Retransmit Analysis** | Per-MAC MAC retry rate, trend changes, time correlation with BA/disconnect events | analyze.py |
+| **TCP/IP Retransmit Analysis** | Plain IPv4/TCP flow packet count, suspected retransmissions by repeated seq+payload_len, top flows, encrypted-payload limitation reporting | analyze.py |
 | **Signal & Noise** | Per-MAC signal time series, avg/min/max, sudden drop detection, SNR estimation | analyze.py + hw_metrics.py |
 | **Frame Size & Aggregation** | A-MPDU/A-MSDU aggregation efficiency, large/small frame ratio | hw_metrics.py |
 | **Control Frame Analysis** | RTS/CTS ratio (hidden node detection), BAR to data frame ratio, ACK efficiency | analyze.py |
@@ -205,6 +206,9 @@ Issues are organized by causal layer. Lower layers are root causes that propagat
 | 4 | **Connectivity** | DHCP No Response | Discover without Offer | HIGH |
 | 4 | **Connectivity** | DHCP Multi-round | >1 round of DORA interaction | HIGH |
 | 4 | **Connectivity** | DHCP Request NAKed | Request received NAK instead of ACK | HIGH |
+| 4 | **Connectivity** | TCP High Retransmit | Suspected TCP retransmit rate >3% MEDIUM, >10% HIGH | MEDIUM/HIGH |
+
+TCP/IP retransmission analysis only works when the capture contains decrypted/plain IPv4/TCP payloads. If the over-the-air data frames are encrypted and no decrypted payload is available, the report explicitly says TCP/IP retransmission cannot be determined.
 
 ### Typical Causal Chain
 

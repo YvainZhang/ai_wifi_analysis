@@ -156,9 +156,9 @@ python3 wifi_analyzer.py <目录> --type ba
 | 层级 | 说明 | 关键内容 |
 |------|------|----------|
 | **L1 原始抓包** | pcapng / pcap / OmniPeek .pkt | 含 Radiotap 头（信号、噪声、信道、速率、天线） |
-| **L2 帧解码** | 802.11 MAC Header + Control + DHCP | Radiotap 解析、MAC 帧、BA Action、**RTS/CTS/ACK/BAR**、DHCP Deep Parse |
-| **L3 数据提取** | 统一的 Result Dict | 帧统计（全子类型）、BA 事件、断连/关联、DHCP 交互、信号数据、重传统计 |
-| **L4 自动检测** | `detect_*_issues()` 自动发现异常 | BA 风暴/循环、频繁断连、弱信号/高重传、DHCP NAK/多轮交互 |
+| **L2 帧解码** | 802.11 MAC Header + Control + DHCP/TCP | Radiotap 解析、MAC 帧、BA Action、**RTS/CTS/ACK/BAR**、DHCP Deep Parse、明文 IPv4/TCP 元数据提取 |
+| **L3 数据提取** | 统一的 Result Dict | 帧统计（全子类型）、BA 事件、断连/关联、DHCP 交互、信号数据、802.11 重传统计、TCP flow 重传统计 |
+| **L4 自动检测** | `detect_*_issues()` 自动发现异常 | BA 风暴/循环、频繁断连、弱信号/高重传、DHCP NAK/多轮交互、TCP 高重传 |
 | **L5 分析框架** | AI + 人工 6 维度分析 | A.连接流程 B.帧质量(必检: 重传/信号/聚合/**控制帧RTS-CTS-ACK**) C.Block Ack D.DHCP E.空口效率 **F.硬件指标** |
 | **L6 根因定位** | 跨层因果链重建 | 分层归因、因果链重建、交叉验证、问题归属、排查建议 |
 
@@ -167,7 +167,8 @@ python3 wifi_analyzer.py <目录> --type ba
 | 维度 | 分析内容 | 数据来源 |
 |------|----------|----------|
 | **帧统计** | Beacon/Probe/Auth/Assoc/RTS/CTS/ACK/BAR/QoS Data/Null/Action/Deauth/Disassoc 全子类型计数与占比 | analyze.py |
-| **重传分析** | per-MAC 重传率、趋势变化、与 BA/断连事件时间关联 | analyze.py |
+| **802.11 重传分析** | per-MAC MAC retry 重传率、趋势变化、与 BA/断连事件时间关联 | analyze.py |
+| **TCP/IP 重传分析** | 明文 IPv4/TCP flow 包数、按重复 seq+payload_len 识别疑似重传、Top flow、加密 payload 限制说明 | analyze.py |
 | **信号与噪声** | per-MAC 信号时序、平均/最小/最大、突降检测、SNR 估算 | analyze.py + hw_metrics.py |
 | **帧大小与聚合** | A-MPDU/A-MSDU 聚合效率、大帧/小帧占比 | hw_metrics.py |
 | **控制帧分析** | RTS/CTS 占比（隐藏节点检测）、BAR 与数据帧比例、ACK 确认效率 | analyze.py |
@@ -203,6 +204,9 @@ python3 wifi_analyzer.py <目录> --type ba
 | 4 | **连接性/网络接入** | DHCP 无响应 | Discover 未收到 Offer | HIGH |
 | 4 | **连接性/网络接入** | DHCP 多轮 | >1 轮 DORA 交互 | HIGH |
 | 4 | **连接性/网络接入** | DHCP Request被NAK | Request 收到 NAK 而非 ACK | HIGH |
+| 4 | **连接性/网络接入** | TCP 高重传率 | 疑似 TCP 重传率 >3% MEDIUM，>10% HIGH | MEDIUM/HIGH |
+
+TCP/IP 重传分析只在抓包中存在已解密/明文 IPv4/TCP payload 时可用。如果空口数据帧已加密且没有解密后的 payload，报告会明确提示无法判断 TCP/IP 层重传。
 
 ### 典型因果链
 
