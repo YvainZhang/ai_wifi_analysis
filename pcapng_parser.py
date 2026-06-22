@@ -8,7 +8,8 @@ Parses pcapng files with radiotap headers and extracts:
 - BA (Block Ack) management events
 - Disconnect events (Deauth / Disassociation)
 - Signal strength tracking
-- Retransmission detection (sequence number gaps)
+- 802.11 MAC retry detection
+- TCP/IP retransmission detection for plain IPv4/TCP payloads
 - Association / Authentication flow
 """
 
@@ -91,6 +92,10 @@ SUBTYPE_NAMES = {
 
 def mac_str(b):
     return ':'.join('%02x' % x for x in b)
+
+
+def ip_str(b):
+    return '%d.%d.%d.%d' % tuple(b)
 
 
 def subtype_name(ftype, fsub):
@@ -586,6 +591,138 @@ def _parse_dhcp_from_frame(wifi_info, wifi_raw):
     return result
 
 
+def _data_payload_from_frame(wifi_raw):
+    """Return 802.11 data payload after the MAC header, or None."""
+    if len(wifi_raw) < 2:
+        return None
+
+    fc = struct.unpack('<H', wifi_raw[:2])[0]
+    ftype = (fc >> 2) & 0x3
+    fsub = (fc >> 4) & 0xF
+    protected = bool(fc & 0x4000)
+    to_ds = bool(fc & 0x0100)
+    from_ds = bool(fc & 0x0200)
+
+    if ftype != DATA or fsub not in (0x0, 0x8):
+        return None
+    if protected:
+        return None
+
+    hdr_len = 26 if fsub >= 0x8 else 24
+    if to_ds and from_ds:
+        hdr_len += 6  # addr4
+    if len(wifi_raw) < hdr_len + 8:
+        return None
+    return wifi_raw[hdr_len:]
+
+
+def _parse_tcp_from_frame(wifi_info, wifi_raw):
+    """
+    Extract IPv4/TCP metadata from a plain 802.11 data frame.
+    Returns dict or None. Encrypted/protected frames cannot be decoded.
+    """
+    payload = _data_payload_from_frame(wifi_raw)
+    if payload is None:
+        return None
+
+    # LLC/SNAP header: AA AA 03 00 00 00 xx xx (ethertype)
+    if len(payload) < 8:
+        return None
+    if payload[0] != 0xAA or payload[1] != 0xAA or payload[2] != 0x03:
+        return None
+
+    ethertype = struct.unpack('>H', payload[6:8])[0]
+    if ethertype != 0x0800:
+        return None
+
+    ip_data = payload[8:]
+    if len(ip_data) < 20:
+        return None
+    version = ip_data[0] >> 4
+    ihl = (ip_data[0] & 0x0F) * 4
+    if version != 4 or ihl < 20 or len(ip_data) < ihl:
+        return None
+
+    total_len = struct.unpack('>H', ip_data[2:4])[0]
+    proto = ip_data[9]
+    if proto != 6:
+        return None
+    if total_len < ihl + 20:
+        return None
+    if len(ip_data) < total_len:
+        return None
+
+    tcp_data = ip_data[ihl:total_len]
+    if len(tcp_data) < 20:
+        return None
+    tcp_hdr_len = (tcp_data[12] >> 4) * 4
+    if tcp_hdr_len < 20 or len(tcp_data) < tcp_hdr_len:
+        return None
+
+    src_port, dst_port = struct.unpack('>HH', tcp_data[:4])
+    seq, ack = struct.unpack('>II', tcp_data[4:12])
+    payload_len = max(0, total_len - ihl - tcp_hdr_len)
+
+    return {
+        'src_mac': wifi_info.get('addr2', ''),
+        'dst_mac': wifi_info.get('addr1', ''),
+        'src_ip': ip_str(ip_data[12:16]),
+        'dst_ip': ip_str(ip_data[16:20]),
+        'src_port': src_port,
+        'dst_port': dst_port,
+        'seq': seq,
+        'ack': ack,
+        'flags': tcp_data[13],
+        'payload_len': payload_len,
+    }
+
+
+def _tcp_flow_key(tcp):
+    return '%s:%d -> %s:%d' % (
+        tcp['src_ip'], tcp['src_port'], tcp['dst_ip'], tcp['dst_port'])
+
+
+def _record_tcp_event(tcp_stats, seen_segments, tcp, max_events=50):
+    """
+    Record a TCP packet and count conservative retransmission candidates.
+    A retransmission is counted when the same directional flow repeats the
+    same sequence number and payload length for a non-empty payload.
+    """
+    flow = _tcp_flow_key(tcp)
+    flows = tcp_stats.setdefault('flows', {})
+    flow_stats = flows.setdefault(flow, {
+        'packets': 0,
+        'payload_bytes': 0,
+        'retransmissions': 0,
+        'events': [],
+    })
+
+    tcp_stats['packets'] = tcp_stats.get('packets', 0) + 1
+    tcp_stats.setdefault('retransmissions', 0)
+    flow_stats['packets'] += 1
+    flow_stats['payload_bytes'] += tcp.get('payload_len', 0)
+
+    if tcp.get('payload_len', 0) <= 0:
+        return False
+
+    segment = (flow, tcp['seq'], tcp['payload_len'])
+    if segment not in seen_segments:
+        seen_segments.add(segment)
+        return False
+
+    tcp_stats['retransmissions'] += 1
+    flow_stats['retransmissions'] += 1
+    event = {
+        'time': tcp.get('time', 0),
+        'flow': flow,
+        'seq': tcp['seq'],
+        'payload_len': tcp['payload_len'],
+    }
+    if len(flow_stats['events']) < max_events:
+        flow_stats['events'].append(event)
+    return True
+
+
 # ============================================================
 # High-level: parse full capture
 # ============================================================
@@ -613,6 +750,8 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
     tid_retransmit = defaultdict(int)
     fcs_errors = 0
     implicit_retransmit = defaultdict(int)
+    tcp_stats = {'packets': 0, 'retransmissions': 0, 'flows': {}}
+    tcp_seen_segments = set()
     first_ts = None
     last_ts = None
     total = 0
@@ -712,6 +851,11 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
                 dhcp['time'] = rel_ts
                 dhcp_events.append(dhcp)
 
+            tcp = _parse_tcp_from_frame(wifi, wifi_data)
+            if tcp:
+                tcp['time'] = rel_ts
+                _record_tcp_event(tcp_stats, tcp_seen_segments, tcp)
+
         # BA events
         if wifi['type'] == MGMT and wifi['subtype'] == ACTION and 'ba' in wifi:
             ba_events.append({
@@ -772,5 +916,6 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
         'dhcp_events': dhcp_events,
         'signal_data': dict(signal_data),
         'retransmit_stats': dict(retransmit_stats),
+        'tcp_stats': tcp_stats,
         'data_timestamps': dict(data_timestamps),
     }

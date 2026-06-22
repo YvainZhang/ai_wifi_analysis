@@ -122,6 +122,7 @@ def _domain_for(category):
         '弱信号': 'rf_quality',
         '信号突变': 'rf_quality',
         '高重传率': 'frame_quality',
+        'TCP 高重传率': 'connectivity',
         'BA Thrashing': 'protocol_ba',
         'DELBA/ADDBA 循环': 'protocol_ba',
         'DELBA 风暴': 'protocol_ba',
@@ -433,6 +434,29 @@ def detect_retransmit_issues(retransmit_stats, total_data_frames):
     return issues
 
 
+def detect_tcp_retransmit_issues(tcp_stats):
+    """Detect TCP/IP layer retransmission issues."""
+    issues = []
+    if not tcp_stats:
+        return issues
+
+    packets = tcp_stats.get('packets', 0)
+    retrans = tcp_stats.get('retransmissions', 0)
+    if packets <= 0 or retrans <= 0:
+        return issues
+
+    rate = 100.0 * retrans / packets
+    if rate > 3.0:
+        issues.append({
+            'severity': 'HIGH' if rate > 10.0 else 'MEDIUM',
+            'category': 'TCP 高重传率',
+            'domain': _domain_for('TCP 高重传率'),
+            'desc': 'TCP/IP 层疑似重传 %d 次 (%.1f%%)' % (retrans, rate),
+            'detail': '按同一方向 TCP flow 内重复 seq+payload_len 统计；若空口帧已加密则无法覆盖',
+        })
+    return issues
+
+
 def detect_dhcp_issues(dhcp_events):
     """Detect DHCP interaction problems."""
     issues = []
@@ -613,7 +637,10 @@ def generate_report(result, problem_desc=None, brief=False):
     all_issues.extend(detect_disconnect_issues(result['disconnect_events'], meta['duration']))
     all_issues.extend(detect_signal_issues(result['signal_data']))
     all_issues.extend(detect_retransmit_issues(
-        result['retransmit_stats'], stats.get('Data', 0)))
+        result['retransmit_stats'],
+        stats.get('Data', 0),
+    ))
+    all_issues.extend(detect_tcp_retransmit_issues(result.get('tcp_stats', {})))
     all_issues.extend(detect_dhcp_issues(result['dhcp_events']))
     all_issues.extend(detect_contention_issues(result))
     all_issues.extend(detect_bit_error_issues(result))
@@ -729,12 +756,39 @@ def generate_report(result, problem_desc=None, brief=False):
     # Retransmit stats
     retx = result['retransmit_stats']
     if retx:
-        w('## 重传统计 (Top 10)')
+        w('## 802.11 MAC 重传统计 (Top 10)')
         w()
         w('| MAC | 重传次数 |')
         w('|-----|---------|')
         for mac, count in sorted(retx.items(), key=lambda x: -x[1])[:10]:
             w('| %s | %d |' % (mac, count))
+        w()
+
+    # TCP/IP retransmit stats
+    tcp_stats = result.get('tcp_stats', {})
+    tcp_flows = tcp_stats.get('flows', {}) if tcp_stats else {}
+    w('## TCP/IP 层重传统计 (Top 10)')
+    w()
+    if not tcp_stats.get('packets', 0):
+        w('未解析到明文 IPv4/TCP 数据帧，无法判断 TCP/IP 层重传。常见原因是空口数据帧已加密，抓包中没有解密后的 IP payload。')
+        w()
+    else:
+        w('> 仅统计未加密、可解出 IPv4/TCP payload 的 802.11 Data 帧；疑似重传按同一方向 flow 内重复 seq+payload_len 判定。')
+        w()
+        w('- TCP 包数: %d' % tcp_stats.get('packets', 0))
+        w('- 疑似 TCP 重传: %d' % tcp_stats.get('retransmissions', 0))
+        w()
+        w('| Flow | TCP包数 | Payload字节 | 疑似重传 | 重传率 | 最近重传时间 |')
+        w('|------|--------|-------------|---------|--------|-------------|')
+        for flow, fs in sorted(
+                tcp_flows.items(),
+                key=lambda x: (-x[1].get('retransmissions', 0), -x[1].get('packets', 0)))[:10]:
+            packets = fs.get('packets', 0)
+            retrans = fs.get('retransmissions', 0)
+            rate = 100.0 * retrans / packets if packets else 0
+            times = ', '.join(fmt_time(e['time']) for e in fs.get('events', [])[:5])
+            w('| %s | %d | %d | %d | %.1f%% | %s |' % (
+                flow, packets, fs.get('payload_bytes', 0), retrans, rate, times or '-'))
         w()
 
     # DHCP timeline
@@ -819,6 +873,7 @@ def print_terminal_report(result, brief=False):
     all_issues.extend(detect_disconnect_issues(result['disconnect_events'], meta['duration']))
     all_issues.extend(detect_signal_issues(result['signal_data']))
     all_issues.extend(detect_retransmit_issues(result['retransmit_stats'], stats.get('Data', 0)))
+    all_issues.extend(detect_tcp_retransmit_issues(result.get('tcp_stats', {})))
     all_issues.extend(detect_dhcp_issues(result['dhcp_events']))
     all_issues.extend(detect_contention_issues(result))
     all_issues.extend(detect_bit_error_issues(result))

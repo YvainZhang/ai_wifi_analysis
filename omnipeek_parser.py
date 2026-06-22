@@ -185,6 +185,7 @@ def parse_omnipeek(filepath):
         'dhcp_events': dhcp_events,
         'signal_data': dict(signal_data),
         'retransmit_stats': dict(retransmit_stats),
+        'tcp_stats': {'packets': 0, 'retransmissions': 0, 'flows': {}},
         'data_timestamps': {},
     }
 
@@ -301,5 +302,6 @@ def _empty_result(filepath, file_size):
         },
         'frame_stats': {}, 'ba_events': [], 'disconnect_events': [],
         'assoc_events': [], 'dhcp_events': [], 'signal_data': {},
-        'retransmit_stats': {}, 'data_timestamps': {},
+        'retransmit_stats': {}, 'tcp_stats': {'packets': 0, 'retransmissions': 0, 'flows': {}},
+        'data_timestamps': {},
     }
