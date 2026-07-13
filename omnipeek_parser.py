@@ -11,16 +11,20 @@ File format (reverse-engineered):
     Metadata TLVs:
       tag 0x0001: timestamp low (uint32)
       tag 0x0002: timestamp high (uint32)
-      tag 0x0006: signal (int32)
-      tag 0x0007: noise (int32)
+      tag 0x0006: signal percentage (int32)
+      tag 0x0007: signal dBm (int32)
+      tag 0x0008: noise percentage (int32)
+      tag 0x0009: noise dBm (int32)
     End of metadata: tag 0x0015 + 0x00000000 + 0xFFFF + ad marker
 """
 
 import struct
 import os
+from bisect import bisect_right
 from collections import defaultdict
 from pcapng_parser import (
-    parse_frame, _parse_dhcp_from_frame, DATA,
+    parse_frame, _parse_dhcp_from_frame, _parse_tcp_from_frame,
+    _record_tcp_event, DATA,
     mac_str, TYPE_NAMES, subtype_name,
     DHCP_MSG_NAMES,
 )
@@ -54,8 +58,12 @@ def _parse_metadata(data, meta_start, meta_end):
         elif tag == 0x0002:
             result['ts_high'] = struct.unpack('<I', val)[0]
         elif tag == 0x0006:
-            result['signal'] = struct.unpack('<i', val)[0]
+            result['signal_percent'] = struct.unpack('<i', val)[0]
         elif tag == 0x0007:
+            result['signal'] = struct.unpack('<i', val)[0]
+        elif tag == 0x0008:
+            result['noise_percent'] = struct.unpack('<i', val)[0]
+        elif tag == 0x0009:
             result['noise'] = struct.unpack('<i', val)[0]
         elif tag == 0x0015:
             break  # end of metadata
@@ -63,7 +71,17 @@ def _parse_metadata(data, meta_start, meta_end):
     return result
 
 
-def parse_omnipeek(filepath):
+def _metadata_timestamp_seconds(meta):
+    """Convert OmniPeek's nanosecond FILETIME to Unix seconds."""
+    if 'ts_low' not in meta and 'ts_high' not in meta:
+        return None
+    raw = (meta.get('ts_high', 0) << 32) | meta.get('ts_low', 0)
+    if raw == 0:
+        return None
+    return raw / 1e9 - 11644473600
+
+
+def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
     """
     Parse OmniPeek .pkt file.
     Returns dict compatible with pcapng_parser.parse_capture().
@@ -86,9 +104,21 @@ def parse_omnipeek(filepath):
     dhcp_events = []
     signal_data = defaultdict(list)
     retransmit_stats = defaultdict(int)
+    data_timestamps = defaultdict(list)
+    ctrl_stats = defaultdict(int)
+    tid_frames = defaultdict(int)
+    tid_retransmit = defaultdict(int)
+    implicit_retransmit = defaultdict(int)
+    seq_tracker = defaultdict(lambda: -1)
+    tcp_stats = {'packets': 0, 'retransmissions': 0, 'flows': {}}
+    tcp_seen_segments = set()
+    filtered = 0
+    mac_set = {m.lower() for m in (mac_filter or [])}
+    offset_times = []
 
-    # Timestamps: normalize to 0-based using first frame's ts_low
+    # Timestamps are normalized to the first valid packet timestamp.
     first_ts = None
+    last_rel_ts = 0.0
 
     for i in range(1, len(ad_positions), 2):
         frame_start = ad_positions[i] + 4
@@ -107,15 +137,32 @@ def parse_omnipeek(filepath):
 
         # Extract timestamp from preceding metadata (even-indexed ad)
         meta = _parse_metadata(data, ad_positions[i - 1], ad_positions[i])
-        ts_raw = meta.get('ts_low', 0)
+        timestamp = _metadata_timestamp_seconds(meta)
+        if timestamp is not None and first_ts is None:
+            first_ts = timestamp
+        if timestamp is not None and first_ts is not None:
+            rel_ts = max(0.0, timestamp - first_ts)
+        else:
+            rel_ts = last_rel_ts
+        last_rel_ts = max(last_rel_ts, rel_ts)
+        offset_times.append((frame_start, rel_ts))
 
-        if first_ts is None:
-            first_ts = frame_start
-        rel_ts = frame_start - first_ts
+        if time_from is not None and rel_ts < time_from:
+            filtered += 1
+            continue
+        if time_to is not None and rel_ts > time_to:
+            break
 
         addr1 = wifi.get('addr1', '')
         addr2 = wifi.get('addr2', '')
-        addr3 = wifi.get('addr3', '')
+        ra = wifi.get('ra', '')
+        ta = wifi.get('ta', '')
+
+        if mac_set:
+            all_macs = {addr1.lower(), addr2.lower(), ra.lower(), ta.lower()}
+            if not all_macs & mac_set:
+                filtered += 1
+                continue
 
         # Frame stats
         sub_name = wifi.get('subtype_name', 'sub%d' % wifi.get('subtype', 0))
@@ -130,6 +177,25 @@ def parse_omnipeek(filepath):
         # Retransmit
         if wifi.get('retry') and addr2:
             retransmit_stats[addr2] += 1
+
+        if wifi['type'] == 1:
+            ctrl_names = {0xB: 'RTS', 0xC: 'CTS', 0xD: 'ACK', 0x8: 'BAR', 0x9: 'BA'}
+            if wifi['subtype'] in ctrl_names:
+                ctrl_stats[ctrl_names[wifi['subtype']]] += 1
+
+        tid = wifi.get('qos_tid')
+        if tid is not None:
+            tid_frames[tid] += 1
+            if wifi.get('retry'):
+                tid_retransmit[tid] += 1
+
+        if 'seq_num' in wifi and addr2 and wifi['type'] == DATA:
+            track_key = (addr2, tid if tid is not None else 0)
+            last_sn = seq_tracker[track_key]
+            cur_sn = wifi['seq_num']
+            if last_sn >= 0 and cur_sn < last_sn and not wifi.get('retry'):
+                implicit_retransmit[addr2] += 1
+            seq_tracker[track_key] = cur_sn
 
         # BA events
         if wifi['type'] == 0 and wifi.get('subtype') == 0xD and 'ba' in wifi:
@@ -153,49 +219,67 @@ def parse_omnipeek(filepath):
 
         # DHCP from data frames
         if wifi['type'] == DATA:
+            if addr2:
+                data_timestamps[addr2].append(rel_ts)
             dhcp = _parse_dhcp_from_frame(wifi, frame_data)
             if dhcp:
                 dhcp['time'] = rel_ts
+                dhcp['offset'] = frame_start
                 dhcp_events.append(dhcp)
+            tcp = _parse_tcp_from_frame(wifi, frame_data)
+            if tcp:
+                tcp['time'] = rel_ts
+                _record_tcp_event(tcp_stats, tcp_seen_segments, tcp)
 
     # Also scan raw data for DHCP (handles cases where frame parsing misses data frames)
-    raw_dhcp = _scan_raw_dhcp(data, ad_positions, first_ts)
+    raw_dhcp = _scan_raw_dhcp(data, offset_times)
+    if time_from is not None:
+        raw_dhcp = [e for e in raw_dhcp if e['time'] >= time_from]
+    if time_to is not None:
+        raw_dhcp = [e for e in raw_dhcp if e['time'] <= time_to]
+    if mac_set:
+        raw_dhcp = [e for e in raw_dhcp if e.get('client_mac', '').lower() in mac_set]
     # Merge raw DHCP into dhcp_events (dedup by offset proximity)
     _merge_dhcp_events(dhcp_events, raw_dhcp)
 
     total_frames = sum(frame_stats.get(t, 0) for t in TYPE_NAMES.values())
-    last_ts = ts_raw - first_ts if first_ts else 0
 
     return {
         'meta': {
             'filepath': filepath,
             'file_size_mb': file_size / 1024 / 1024,
             'total_packets': total_frames,
-            'filtered_packets': 0,
+            'filtered_packets': filtered,
             'reader_total': (len(ad_positions) - 1) // 2,
-            'duration': last_ts,
+            'duration': last_rel_ts,
             'first_ts': first_ts,
             'interfaces': [{'link_type': 105, 'snap_len': 65535}],
             'format': 'OmniPeek/AiroPeek .pkt',
         },
         'frame_stats': dict(frame_stats),
+        'ctrl_stats': dict(ctrl_stats),
+        'tid_frames': dict(tid_frames),
+        'tid_retransmit': dict(tid_retransmit),
+        'fcs_errors': 0,
+        'implicit_retransmit': dict(implicit_retransmit),
         'ba_events': ba_events,
         'disconnect_events': disconnect_events,
         'assoc_events': assoc_events,
         'dhcp_events': dhcp_events,
         'signal_data': dict(signal_data),
         'retransmit_stats': dict(retransmit_stats),
-        'tcp_stats': {'packets': 0, 'retransmissions': 0, 'flows': {}},
-        'data_timestamps': {},
+        'tcp_stats': tcp_stats,
+        'data_timestamps': dict(data_timestamps),
     }
 
 
-def _scan_raw_dhcp(data, ad_positions, first_ts):
+def _scan_raw_dhcp(data, offset_times):
     """
     Scan raw file data for DHCP messages by searching for the magic cookie.
     This catches DHCP even when frame extraction misses data frames.
     """
     dhcp_events = []
+    offsets = [item[0] for item in offset_times]
     pos = 0
     while True:
         idx = data.find(DHCP_MAGIC, pos)
@@ -247,12 +331,11 @@ def _scan_raw_dhcp(data, ad_positions, first_ts):
         if msg_type is None:
             continue
 
-        # Use file offset as relative timestamp (proportional to real time)
-        # This is approximate but gives correct ordering and rough timing
-        approx_ts = bootp_start
+        time_idx = bisect_right(offsets, bootp_start) - 1
+        event_time = offset_times[time_idx][1] if time_idx >= 0 else 0.0
 
         dhcp_events.append({
-            'time': approx_ts,
+            'time': event_time,
             'msg_type': msg_type,
             'msg_name': DHCP_MSG_NAMES.get(msg_type, 'Unknown(%d)' % msg_type),
             'src_mac': '',
@@ -288,6 +371,7 @@ def _merge_dhcp_events(existing, new_events):
                 break
         if not is_dup:
             existing.append(e)
+            existing_offsets.add(offset)
 
 
 def _empty_result(filepath, file_size):
@@ -300,7 +384,9 @@ def _empty_result(filepath, file_size):
             'interfaces': [{'link_type': 105, 'snap_len': 65535}],
             'format': 'OmniPeek/AiroPeek .pkt',
         },
-        'frame_stats': {}, 'ba_events': [], 'disconnect_events': [],
+        'frame_stats': {}, 'ctrl_stats': {}, 'tid_frames': {},
+        'tid_retransmit': {}, 'fcs_errors': 0, 'implicit_retransmit': {},
+        'ba_events': [], 'disconnect_events': [],
         'assoc_events': [], 'dhcp_events': [], 'signal_data': {},
         'retransmit_stats': {}, 'tcp_stats': {'packets': 0, 'retransmissions': 0, 'flows': {}},
         'data_timestamps': {},

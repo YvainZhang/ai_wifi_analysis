@@ -178,8 +178,7 @@ def analyze_hw_metrics(filepath, target_macs=None):
             tid = wifi.get('qos_tid')
             if tid is not None:
                 sec_tid_retransmit[sec][tid] += 1
-        rx_flags = rtap.get('rx_flags', 0)
-        if rx_flags & 0x0001:
+        if rtap.get('flags', 0) & 0x40:
             s['fcs_errors'] += 1
         if rate is not None:
             s['rate_sum'] += rate
@@ -509,10 +508,10 @@ def print_report(results, target_macs):
         if fcs_secs:
             samples = [f"{s}s({c})" for s, c in fcs_secs[:10]]
             print(f"    分布: {', '.join(samples)}")
-    elif results.get('rtap_fields', {}).get('rx_flags', 0) > 0:
-        print("    FCS 错误帧: 0（抓包中 rx_flags 可用，无误码）")
+    elif results.get('rtap_fields', {}).get('flags', 0) > 0:
+        print("    FCS 错误帧: 0（抓包中 Radiotap Flags 可用，无误码）")
     else:
-        print("    抓包中无 rx_flags 字段，无法检测 FCS 错误")
+        print("    抓包中无 Radiotap Flags 字段，无法检测 FCS 错误")
 
     # 14. Summary diagnostics
     print("\n## 14. 硬件指标诊断总结")

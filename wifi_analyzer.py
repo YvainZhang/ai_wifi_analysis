@@ -19,8 +19,13 @@ import json
 import os
 import sys
 
-from pcapng_parser import parse_capture
-from analyze import generate_report, find_files_in_dir
+from analyze import (
+    apply_event_filter,
+    detect_capture_format,
+    generate_report,
+    parse_capture_file,
+    resolve_input_files,
+)
 from llm_client import LLMConfig, chat_stream, chat
 from prompt_builder import build_prompt
 
@@ -99,20 +104,10 @@ def load_config(args) -> LLMConfig:
 
 def discover_and_parse(input_path, args):
     """Discover files, parse capture, return (result, problem_desc)."""
-    desc_file = args.desc
-    capture_file = None
-
-    if os.path.isdir(input_path):
-        capture_file, auto_desc = find_files_in_dir(input_path)
-        if not capture_file:
-            print(f"Error: 目录下未找到抓包文件 (.pcapng/.pcap/.pkt): {input_path}", file=sys.stderr)
-            sys.exit(1)
-        if not desc_file and auto_desc:
-            desc_file = auto_desc
-    elif os.path.isfile(input_path):
-        capture_file = input_path
-    else:
-        print(f"Error: 文件不存在: {input_path}", file=sys.stderr)
+    try:
+        capture_file, desc_file = resolve_input_files(input_path, args.desc)
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     # Read problem description
@@ -124,47 +119,24 @@ def discover_and_parse(input_path, args):
     else:
         print("  Warning: 未找到问题描述文件，分析质量可能受影响", file=sys.stderr)
 
-    # Auto-detect format
-    is_omnipeek = capture_file.endswith(".pkt")
-    if not is_omnipeek:
-        try:
-            with open(capture_file, "rb") as f:
-                head = f.read(8)
-            if len(head) >= 4 and head[0] == 0x7F and head[1:4] == b"ver":
-                is_omnipeek = True
-        except Exception:
-            pass
-
-    # Parse
-    if is_omnipeek:
-        from omnipeek_parser import parse_omnipeek
+    try:
+        capture_format = detect_capture_format(capture_file)
+    except (OSError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    if capture_format == "omnipeek":
         print(f"  正在解析 {capture_file} (OmniPeek 格式) ...", file=sys.stderr)
-        result = parse_omnipeek(capture_file)
     else:
         print(f"  正在解析 {capture_file} ...", file=sys.stderr)
-        mac_filter = None
-        if args.mac:
-            mac_filter = [m.strip() for m in args.mac.split(",")]
-        result = parse_capture(
-            capture_file,
-            mac_filter=mac_filter,
-            time_from=args.time_from,
-            time_to=args.time_to,
-        )
-
-    # Apply filters
-    if args.tid is not None:
-        result["ba_events"] = [e for e in result["ba_events"] if e["ba"].get("tid") == args.tid]
-
-    if args.event_type == "ba":
-        result["disconnect_events"] = []
-        result["assoc_events"] = []
-    elif args.event_type == "disconnect":
-        result["ba_events"] = []
-        result["assoc_events"] = []
-    elif args.event_type == "assoc":
-        result["ba_events"] = []
-        result["disconnect_events"] = []
+    mac_filter = [m.strip() for m in args.mac.split(",")] if args.mac else None
+    result, _capture_format = parse_capture_file(
+        capture_file,
+        mac_filter=mac_filter,
+        time_from=args.time_from,
+        time_to=args.time_to,
+        capture_format=capture_format,
+    )
+    apply_event_filter(result, tid=args.tid, event_type=args.event_type)
 
     return result, problem_desc
 

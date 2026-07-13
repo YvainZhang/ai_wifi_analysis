@@ -403,7 +403,7 @@ def detect_bit_error_issues(result):
     if fcs > 0:
         stats = result.get('frame_stats', {})
         total_frames = stats.get('Data', 0) + stats.get('Control', 0) + stats.get('Management', 0)
-        rate = fcs / (total_frames + fcs) * 100 if (total_frames + fcs) > 0 else 0
+        rate = fcs / total_frames * 100 if total_frames > 0 else 0
         sev = 'HIGH' if rate > 5 else 'MEDIUM' if rate > 1 else 'INFO'
         issues.append({
             'severity': sev,
@@ -936,18 +936,95 @@ def print_terminal_report(result, brief=False):
 
 def find_files_in_dir(directory):
     """Auto-discover capture + description in a directory."""
-    capture = None
+    captures = []
     desc = None
-    for f in os.listdir(directory):
+    for f in sorted(os.listdir(directory)):
         fp = os.path.join(directory, f)
         if not os.path.isfile(fp):
             continue
         if f.endswith('.pcapng') or f.endswith('.pcap') or f.endswith('.pkt'):
-            if capture is None:
-                capture = fp
+            captures.append(fp)
         if '问题描述' in f and f.endswith('.md'):
             desc = fp
-    return capture, desc
+    priority = {'.pcapng': 0, '.pkt': 1, '.pcap': 2}
+    captures.sort(key=lambda p: (priority.get(os.path.splitext(p)[1].lower(), 9), p))
+    return (captures[0] if captures else None), desc
+
+
+def resolve_input_files(input_path, desc_file=None):
+    """Resolve a capture and optional problem description from a path."""
+    if os.path.isdir(input_path):
+        capture_file, auto_desc = find_files_in_dir(input_path)
+        if not capture_file:
+            raise FileNotFoundError(
+                '目录下未找到抓包文件 (.pcapng/.pcap/.pkt): %s' % input_path)
+        return capture_file, desc_file or auto_desc
+    if os.path.isfile(input_path):
+        return input_path, desc_file
+    raise FileNotFoundError('文件不存在: %s' % input_path)
+
+
+def detect_capture_format(capture_file):
+    """Return 'omnipeek' or 'pcapng' using extension and file signature."""
+    with open(capture_file, 'rb') as f:
+        head = f.read(8)
+    if capture_file.lower().endswith('.pkt') or (
+            len(head) >= 4 and head[0] == 0x7F and head[1:4] == b'ver'):
+        return 'omnipeek'
+    if head[:4] == b'\x0a\x0d\x0d\x0a':
+        return 'pcapng'
+    classic_pcap_magics = {
+        b'\xd4\xc3\xb2\xa1', b'\xa1\xb2\xc3\xd4',
+        b'\x4d\x3c\xb2\xa1', b'\xa1\xb2\x3c\x4d',
+    }
+    if head[:4] in classic_pcap_magics:
+        raise ValueError('暂不支持 classic pcap，请先转换为 pcapng')
+    raise ValueError('无法识别抓包格式: %s' % capture_file)
+
+
+def parse_capture_file(capture_file, mac_filter=None, time_from=None, time_to=None,
+                       capture_format=None):
+    """Parse either supported capture format through one shared entry point."""
+    capture_format = capture_format or detect_capture_format(capture_file)
+    if capture_format == 'omnipeek':
+        from omnipeek_parser import parse_omnipeek
+        result = parse_omnipeek(
+            capture_file,
+            mac_filter=mac_filter,
+            time_from=time_from,
+            time_to=time_to,
+        )
+    else:
+        result = parse_capture(
+            capture_file,
+            mac_filter=mac_filter,
+            time_from=time_from,
+            time_to=time_to,
+        )
+    return result, capture_format
+
+
+def apply_event_filter(result, tid=None, event_type=None):
+    """Apply report-level event filters consistently for both CLIs."""
+    if tid is not None:
+        result['ba_events'] = [
+            e for e in result['ba_events'] if e['ba'].get('tid') == tid]
+
+    if event_type == 'ba':
+        result['disconnect_events'] = []
+        result['assoc_events'] = []
+    elif event_type == 'disconnect':
+        result['ba_events'] = []
+        result['assoc_events'] = []
+    elif event_type == 'assoc':
+        result['ba_events'] = []
+        result['disconnect_events'] = []
+    elif event_type == 'signal':
+        result['ba_events'] = []
+        result['disconnect_events'] = []
+        result['assoc_events'] = []
+    # 'mgmt' intentionally keeps all three management event collections.
+    return result
 
 
 def main():
@@ -968,22 +1045,10 @@ def main():
 
     args = parser.parse_args()
 
-    # Determine input files
-    input_path = args.input
-    pcapng_file = None
-    desc_file = args.desc
-
-    if os.path.isdir(input_path):
-        capture_file, auto_desc = find_files_in_dir(input_path)
-        if not capture_file:
-            print('Error: 目录下未找到抓包文件 (.pcapng/.pcap/.pkt): %s' % input_path)
-            sys.exit(1)
-        if not desc_file and auto_desc:
-            desc_file = auto_desc
-    elif os.path.isfile(input_path):
-        capture_file = input_path
-    else:
-        print('Error: 文件不存在: %s' % input_path)
+    try:
+        capture_file, desc_file = resolve_input_files(args.input, args.desc)
+    except FileNotFoundError as e:
+        print('Error: %s' % e)
         sys.exit(1)
 
     # Read problem description
@@ -997,45 +1062,21 @@ def main():
     if args.mac:
         mac_filter = [m.strip() for m in args.mac.split(',')]
 
-    # Auto-detect format: check content, not just extension
-    is_omnipeek = capture_file.endswith('.pkt')
-    if not is_omnipeek:
-        # Check magic bytes: OmniPeek starts with 0x7F + 'ver', pcapng starts with SHB/IDB
-        try:
-            with open(capture_file, 'rb') as f:
-                head = f.read(8)
-            if len(head) >= 4 and head[0] == 0x7F and head[1:4] == b'ver':
-                is_omnipeek = True
-        except Exception:
-            pass
-
-    if is_omnipeek:
-        from omnipeek_parser import parse_omnipeek
-        print('正在解析 %s (OmniPeek 格式) ...' % capture_file, file=sys.stderr)
-        result = parse_omnipeek(capture_file)
-    else:
-        print('正在解析 %s ...' % capture_file, file=sys.stderr)
-        result = parse_capture(
-            capture_file,
-            mac_filter=mac_filter,
+    try:
+        capture_format = detect_capture_format(capture_file)
+    except (OSError, ValueError) as e:
+        print('Error: %s' % e)
+        sys.exit(1)
+    suffix = ' (OmniPeek 格式)' if capture_format == 'omnipeek' else ''
+    print('正在解析 %s%s ...' % (capture_file, suffix), file=sys.stderr)
+    result, _capture_format = parse_capture_file(
+        capture_file,
+        mac_filter=mac_filter,
         time_from=args.time_from,
         time_to=args.time_to,
-        )
-
-    # Apply TID filter
-    if args.tid is not None:
-        result['ba_events'] = [e for e in result['ba_events'] if e['ba'].get('tid') == args.tid]
-
-    # Apply event type filter
-    if args.event_type == 'ba':
-        result['disconnect_events'] = []
-        result['assoc_events'] = []
-    elif args.event_type == 'disconnect':
-        result['ba_events'] = []
-        result['assoc_events'] = []
-    elif args.event_type == 'assoc':
-        result['ba_events'] = []
-        result['disconnect_events'] = []
+        capture_format=capture_format,
+    )
+    apply_event_filter(result, tid=args.tid, event_type=args.event_type)
 
     # Output
     if args.report:

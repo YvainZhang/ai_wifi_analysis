@@ -179,7 +179,7 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 | **DHCP** | DORA completeness, NAK/timeout/no response, multi-round interaction, per-step timing | analyze.py |
 | **Air Efficiency** | Data frame ratio, management/control frame overhead, effective throughput estimation | analyze.py |
 | **Contention Analysis** | RTS/CTS to data ratio, WMM TID (VO/VI/BE/BK) distribution, BAR/BA session overhead | analyze.py + hw_metrics.py |
-| **Bit Error Analysis** | FCS error detection (rx_flags), implicit retransmit (sequence number gaps), error-signal correlation | analyze.py + hw_metrics.py |
+| **Bit Error Analysis** | FCS error detection (Radiotap Flags Bad FCS), implicit retransmit (sequence number gaps), error-signal correlation | analyze.py + hw_metrics.py |
 | **Hardware Metrics** | Signal histogram, 5-second window stability, noise floor, retransmit frame signal comparison, rate distribution, antenna distribution, per-second trend | hw_metrics.py |
 
 ### Auto Detection Thresholds (Layered — Bottom-Up Root Cause)

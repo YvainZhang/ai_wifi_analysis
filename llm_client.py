@@ -12,6 +12,7 @@ Usage:
 
 import json
 import ssl
+import sys
 import time
 import urllib.request
 import urllib.error
@@ -95,7 +96,11 @@ def chat_stream(config: LLMConfig, system: str, user: str) -> Generator[str, Non
     """Stream LLM response. Yields text chunks."""
     est_in = _estimate_tokens(system + user)
     est_out = config.max_tokens
-    print(f"  [LLM] estimated input: ~{est_in} tokens, max output: {est_out} tokens", flush=True)
+    print(
+        f"  [LLM] estimated input: ~{est_in} tokens, max output: {est_out} tokens",
+        file=sys.stderr,
+        flush=True,
+    )
 
     if config.provider == "anthropic":
         yield from _stream_anthropic(config, system, user)
@@ -105,7 +110,6 @@ def chat_stream(config: LLMConfig, system: str, user: str) -> Generator[str, Non
 
 def chat(config: LLMConfig, system: str, user: str) -> str:
     """Non-streaming call. Returns full response."""
-    chunks = []
     # For non-streaming, use non-stream endpoint
     if config.provider == "anthropic":
         return _call_anthropic(config, system, user)

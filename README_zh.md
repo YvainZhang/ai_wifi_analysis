@@ -177,7 +177,7 @@ python3 wifi_analyzer.py <目录> --type ba
 | **DHCP** | DORA 完整性、NAK/超时/无响应、多轮交互、每步耗时 | analyze.py |
 | **空口效率** | 数据帧占比、管理帧/控制帧开销、有效吞吐估算 | analyze.py |
 | **竞争分析** | RTS/CTS 与数据帧比、WMM TID(VO/VI/BE/BK) 分布、BAR/BA 会话开销 | analyze.py + hw_metrics.py |
-| **误码分析** | FCS 错误帧检测（rx_flags）、隐式重传（序列号间隙）、误码与信号质量关联 | analyze.py + hw_metrics.py |
+| **误码分析** | FCS 错误帧检测（Radiotap Flags Bad FCS）、隐式重传（序列号间隙）、误码与信号质量关联 | analyze.py + hw_metrics.py |
 | **硬件指标** | 信号直方图、5秒窗口稳定性、噪声底噪、重传帧信号对比、速率分布、天线分布、每秒趋势 | hw_metrics.py |
 
 ### 自动检测阈值（因果层级 — 自底向上排查）

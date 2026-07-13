@@ -123,8 +123,14 @@ class PcapngReader:
                 if len(hdr) < 8:
                     return
                 btype, blen = struct.unpack('<II', hdr)
+                if blen < 12 or blen % 4 or blen > self.file_size:
+                    return
                 body = f.read(blen - 12)
-                f.read(4)  # trailing length
+                trailer = f.read(4)
+                if len(body) != blen - 12 or len(trailer) != 4:
+                    return
+                if struct.unpack('<I', trailer)[0] != blen:
+                    return
 
                 if btype == SHB:
                     pass
@@ -142,8 +148,9 @@ class PcapngReader:
                         yield pkt
 
     def _parse_idb(self, body):
+        if len(body) < 8:
+            return
         link_type, snap_len = struct.unpack('<HI', body[:6])
-        idx = len(self.interfaces)
         self.interfaces.append({'link_type': link_type, 'snap_len': snap_len})
         # Default: microseconds (10^-6)
         res = 1e6
@@ -153,12 +160,14 @@ class PcapngReader:
             opt_code, opt_len = struct.unpack('<HH', body[opt_off:opt_off + 4])
             if opt_code == 0:  # end of options
                 break
+            if opt_off + 4 + opt_len > len(body):
+                break
             if opt_code == 9 and opt_len >= 1:  # if_tsresol
                 resol = body[opt_off + 4]
-                if resol & 0x80:  # negative power of 10
-                    res = 10 ** (resol & 0x7F)
-                else:  # negative power of 2
+                if resol & 0x80:  # negative power of 2
                     res = 2 ** (resol & 0x7F)
+                else:  # negative power of 10
+                    res = 10 ** resol
             opt_off += 4 + ((opt_len + 3) & ~3)  # options are padded to 4-byte boundary
         self._ts_resolutions.append(res)
 
@@ -167,6 +176,8 @@ class PcapngReader:
             return None
         iface_id, ts_high, ts_low, cap_len, orig_len = struct.unpack('<IIIII', body[:20])
         if cap_len > 10 * 1024 * 1024:  # sanity: >10MB per packet is wrong
+            return None
+        if 20 + cap_len > len(body):
             return None
         pkt_data = body[20:20 + cap_len]
 
@@ -211,89 +222,63 @@ def parse_radiotap(raw):
     if len(raw) < 8 or raw[0] != 0x00:
         return {}, raw
 
-    _ver, _pad, hdr_len, present = struct.unpack('<BBHI', raw[:8])
+    _ver, _pad, hdr_len, _present = struct.unpack('<BBHI', raw[:8])
     if hdr_len > len(raw) or hdr_len < 8:
         return {}, raw
 
     info = {}
     # Read all present-flag words
-    flags_list = []
+    flags_list = [_present]
     off = 8
-    while off <= hdr_len - 4:
+    while flags_list[-1] & 0x80000000:
+        if off > hdr_len - 4:
+            return {}, raw
         pf = struct.unpack('<I', raw[off:off + 4])[0]
         flags_list.append(pf)
         off += 4
-        if not (pf & 0x80000000):
+
+    # Fields are aligned relative to the beginning of the radiotap header.
+    # This parser intentionally stops before bit 14, where captures commonly
+    # start carrying fields whose sizes vary by radiotap revision/vendor.
+    off = 8 + (len(flags_list) - 1) * 4
+    present0 = flags_list[0] if flags_list else 0
+    field_layout = {
+        0: (8, 8), 1: (1, 1), 2: (1, 1), 3: (2, 4),
+        4: (2, 2), 5: (1, 1), 6: (1, 1), 7: (2, 2),
+        8: (2, 2), 9: (2, 2), 10: (1, 1), 11: (1, 1),
+        12: (1, 1), 13: (1, 1),
+    }
+    for bit in range(14):
+        if not (present0 & (1 << bit)):
+            continue
+        align, size = field_layout[bit]
+        off = (off + align - 1) & ~(align - 1)
+        if off + size > hdr_len:
             break
 
-    # Walk fields
-    off = 8 + len(flags_list) * 4
-    for pf in flags_list:
-        if off >= hdr_len:
-            break
-        for bit in range(30):
-            if not (pf & (1 << bit)):
-                continue
-            try:
-                if bit == 0 and off + 8 <= hdr_len:  # TSFT
-                    info['tsft'] = struct.unpack('<Q', raw[off:off + 8])[0]
-                    off += 8
-                elif bit == 1 and off + 1 <= hdr_len:  # Flags
-                    info['flags'] = raw[off]
-                    off += 1
-                elif bit == 2 and off + 1 <= hdr_len:  # Rate (500kbps units)
-                    info['rate'] = raw[off] * 0.5  # Mbps
-                    off += 1
-                elif bit == 3 and off + 4 <= hdr_len:  # Channel
-                    freq, chflags = struct.unpack('<HH', raw[off:off + 4])
-                    info['channel_freq'] = freq
-                    info['channel'] = (freq - 2407) // 5 if freq < 3000 else (freq - 5000) // 5
-                    off += 4
-                elif bit == 4 and off + 2 <= hdr_len:  # FHSS
-                    off += 2
-                elif bit == 5 and off + 1 <= hdr_len:  # dBm signal
-                    info['dbm_signal'] = struct.unpack('<b', raw[off:off + 1])[0]
-                    off += 1
-                elif bit == 6 and off + 1 <= hdr_len:  # dBm noise
-                    info['dbm_noise'] = struct.unpack('<b', raw[off:off + 1])[0]
-                    off += 1
-                elif bit == 7 and off + 2 <= hdr_len:  # Lock quality
-                    off += 2
-                elif bit == 8 and off + 2 <= hdr_len:  # TX attenuation
-                    off += 2
-                elif bit == 9 and off + 2 <= hdr_len:  # TX dBm
-                    off += 2
-                elif bit == 10 and off + 2 <= hdr_len:  # Antenna
-                    info['antenna'] = raw[off]
-                    off += 2
-                elif bit == 11 and off + 2 <= hdr_len:  # RX flags
-                    info['rx_flags'] = struct.unpack('<H', raw[off:off + 2])[0]
-                    off += 2
-                elif bit == 12 and off + 4 <= hdr_len:  # TX flags
-                    off += 4
-                elif bit == 13 and off + 1 <= hdr_len:  # RSSI
-                    info['rssi'] = struct.unpack('<b', raw[off:off + 1])[0]
-                    off += 1
-                elif bit == 14 and off + 4 <= hdr_len:  # Channel+
-                    freq, chflags, channel = struct.unpack('<IHHI', raw[off:off + 8])
-                    info['channel_freq'] = freq
-                    off += 8
-                elif bit >= 15:
-                    _RT_SIZES = {15: 2, 16: 1, 17: 1, 19: 4, 21: 12, 22: 8}
-                    if bit in _RT_SIZES:
-                        sz = _RT_SIZES[bit]
-                        if off + sz <= hdr_len:
-                            if bit == 19:
-                                info['mcs_known'] = raw[off]
-                                info['mcs_flags'] = raw[off + 1]
-                                info['mcs_index'] = raw[off + 2]
-                            off += sz
-                        else:
-                            break
-                    else:
-                        break
-            except struct.error:
-                break
+        if bit == 0:
+            info['tsft'] = struct.unpack_from('<Q', raw, off)[0]
+        elif bit == 1:
+            info['flags'] = raw[off]
+        elif bit == 2:
+            info['rate'] = raw[off] * 0.5
+        elif bit == 3:
+            freq, _chflags = struct.unpack_from('<HH', raw, off)
+            info['channel_freq'] = freq
+            info['channel'] = (freq - 2407) // 5 if freq < 3000 else (freq - 5000) // 5
+        elif bit == 5:
+            info['dbm_signal'] = struct.unpack_from('<b', raw, off)[0]
+        elif bit == 6:
+            info['dbm_noise'] = struct.unpack_from('<b', raw, off)[0]
+        elif bit == 10:
+            info['dbm_tx_power'] = struct.unpack_from('<b', raw, off)[0]
+        elif bit == 11:
+            info['antenna'] = raw[off]
+        elif bit == 12:
+            info['db_signal'] = raw[off]
+        elif bit == 13:
+            info['db_noise'] = raw[off]
+        off += size
 
     return info, raw[hdr_len:]
 
@@ -463,6 +448,8 @@ def _parse_dhcp_from_frame(wifi_info, wifi_raw):
     Returns dict or None.
     wifi_raw is the raw 802.11 frame data (after radiotap).
     """
+    if len(wifi_raw) < 2:
+        return None
     fc = struct.unpack('<H', wifi_raw[:2])[0]
     ftype = (fc >> 2) & 0x3
     fsub = (fc >> 4) & 0xF
@@ -523,6 +510,7 @@ def _parse_dhcp_from_frame(wifi_info, wifi_raw):
     msg_type = None
     requested_ip = None
     server_id = None
+    hostname = None
     i = 0
     while i < len(op) - 1:
         tag = op[i]
@@ -582,11 +570,15 @@ def _parse_dhcp_from_frame(wifi_info, wifi_raw):
         'src_mac': src_mac,
         'dst_mac': dst_mac,
         'client_mac': client_mac,
+        'xid': struct.unpack('>I', dhcp_data[4:8])[0],
+        'op': 'Request' if dhcp_data[0] == 1 else 'Reply',
     }
     if requested_ip:
         result['requested_ip'] = requested_ip
     if server_id:
         result['server_id'] = server_id
+    if hostname:
+        result['hostname'] = hostname
 
     return result
 
@@ -794,7 +786,7 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
                 filtered += 1
                 continue
 
-        rel_ts = ts - first_ts if first_ts else 0
+        rel_ts = ts - first_ts if first_ts is not None else 0
 
         # Frame stats
         key = '%s/%s' % (wifi['type_name'], wifi['subtype_name'])
@@ -814,9 +806,8 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
         if tid is not None:
             tid_frames[tid] += 1
 
-        # FCS error detection
-        rx_flags = rtap.get('rx_flags', 0)
-        if rx_flags & 0x0001:
+        # Radiotap Flags bit 6 marks a frame with a bad FCS.
+        if rtap.get('flags', 0) & 0x40:
             fcs_errors += 1
             continue
 
@@ -891,7 +882,7 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
                 evt['aid'] = wifi['assoc_id']
             assoc_events.append(evt)
 
-    duration = (last_ts - first_ts) if (first_ts and last_ts) else 0
+    duration = (last_ts - first_ts) if (first_ts is not None and last_ts is not None) else 0
 
     return {
         'meta': {
@@ -903,6 +894,7 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
             'duration': duration,
             'first_ts': first_ts,
             'interfaces': reader.interfaces,
+            'format': 'pcapng',
         },
         'frame_stats': dict(frame_stats),
         'ctrl_stats': dict(ctrl_stats),
