@@ -24,7 +24,7 @@ import sys
 from datetime import datetime, timezone
 from collections import defaultdict
 
-from pcapng_parser import parse_capture
+from pcapng_parser import DHCP_ACK, DHCP_NAK, parse_capture
 
 
 # ============================================================
@@ -415,14 +415,15 @@ def detect_bit_error_issues(result):
     return issues
 
 
-def detect_retransmit_issues(retransmit_stats, total_data_frames):
+def detect_retransmit_issues(retransmit_stats, total_data_frames, data_frame_counts=None):
     """Detect retransmission rate issues."""
     issues = []
     if not retransmit_stats or not total_data_frames:
         return issues
 
     for mac, count in sorted(retransmit_stats.items(), key=lambda x: -x[1])[:5]:
-        rate = 100.0 * count / max(total_data_frames, 1)
+        denominator = (data_frame_counts or {}).get(mac, total_data_frames)
+        rate = 100.0 * count / max(denominator, 1)
         if rate > 5.0:
             issues.append({
                 'severity': 'HIGH' if rate > 15 else 'MEDIUM',
@@ -472,8 +473,8 @@ def detect_dhcp_issues(dhcp_events):
     total_discover = sum(1 for e in dhcp_events if e['msg_type'] == 1)
     total_offer = sum(1 for e in dhcp_events if e['msg_type'] == 2)
     total_request = sum(1 for e in dhcp_events if e['msg_type'] == 3)
-    total_ack = sum(1 for e in dhcp_events if e['msg_type'] == 6)
-    total_nak = sum(1 for e in dhcp_events if e['msg_type'] == 5)
+    total_ack = sum(1 for e in dhcp_events if e['msg_type'] == DHCP_ACK)
+    total_nak = sum(1 for e in dhcp_events if e['msg_type'] == DHCP_NAK)
 
     # Multiple DHCP rounds
     if len(xid_groups) > 1:
@@ -516,8 +517,8 @@ def detect_dhcp_issues(dhcp_events):
     req_no_ack = 0
     for xid, events in xid_groups.items():
         has_req = any(e['msg_type'] == 3 for e in events)
-        has_ack = any(e['msg_type'] == 6 for e in events)
-        has_nak = any(e['msg_type'] == 5 for e in events)
+        has_ack = any(e['msg_type'] == DHCP_ACK for e in events)
+        has_nak = any(e['msg_type'] == DHCP_NAK for e in events)
         if has_req and not has_ack and has_nak:
             req_no_ack += 1
     if req_no_ack > 0:
@@ -639,6 +640,7 @@ def generate_report(result, problem_desc=None, brief=False):
     all_issues.extend(detect_retransmit_issues(
         result['retransmit_stats'],
         stats.get('Data', 0),
+        result.get('data_frame_counts'),
     ))
     all_issues.extend(detect_tcp_retransmit_issues(result.get('tcp_stats', {})))
     all_issues.extend(detect_dhcp_issues(result['dhcp_events']))
@@ -810,8 +812,8 @@ def generate_report(result, problem_desc=None, brief=False):
             host = events_sorted[0].get('hostname', '')
 
             # Check if this round succeeded
-            has_ack = any(e['msg_type'] == 6 for e in events)
-            has_nak = any(e['msg_type'] == 5 for e in events)
+            has_ack = any(e['msg_type'] == DHCP_ACK for e in events)
+            has_nak = any(e['msg_type'] == DHCP_NAK for e in events)
             result_str = 'ACK(成功)' if has_ack else ('NAK(失败)' if has_nak else '未完成')
 
             w('### 第 %d 轮 (xid=0x%08x, 客户端=%s%s)' % (
@@ -872,7 +874,10 @@ def print_terminal_report(result, brief=False):
     all_issues.extend(detect_ba_issues(result['ba_events'], meta['duration']))
     all_issues.extend(detect_disconnect_issues(result['disconnect_events'], meta['duration']))
     all_issues.extend(detect_signal_issues(result['signal_data']))
-    all_issues.extend(detect_retransmit_issues(result['retransmit_stats'], stats.get('Data', 0)))
+    all_issues.extend(detect_retransmit_issues(
+        result['retransmit_stats'], stats.get('Data', 0),
+        result.get('data_frame_counts'),
+    ))
     all_issues.extend(detect_tcp_retransmit_issues(result.get('tcp_stats', {})))
     all_issues.extend(detect_dhcp_issues(result['dhcp_events']))
     all_issues.extend(detect_contention_issues(result))

@@ -10,14 +10,16 @@ Usage:
         print(chunk, end="", flush=True)
 """
 
+import codecs
+import http.client
 import json
 import ssl
 import sys
 import time
-import urllib.request
 import urllib.error
-from dataclasses import dataclass, field
-from typing import Generator
+import urllib.request
+from dataclasses import dataclass
+from typing import Any, Generator, Iterator
 
 
 @dataclass
@@ -52,7 +54,7 @@ def _create_ssl_context() -> ssl.SSLContext:
     return ctx
 
 
-def _do_request(req: urllib.request.Request, timeout: int) -> urllib.response.HTTPResponse:
+def _do_request(req: urllib.request.Request, timeout: int) -> http.client.HTTPResponse:
     """Execute request with retry on 429/5xx."""
     last_err = None
     for attempt in range(3):
@@ -61,10 +63,12 @@ def _do_request(req: urllib.request.Request, timeout: int) -> urllib.response.HT
             return urllib.request.urlopen(req, timeout=timeout, context=ctx)
         except urllib.error.HTTPError as e:
             last_err = e
-            if e.code == 429 or e.code >= 500:
+            if (e.code == 429 or e.code >= 500) and attempt < 2:
+                e.close()
                 wait = 2 ** attempt * 2
                 time.sleep(wait)
                 continue
+            e.close()
             raise
         except urllib.error.URLError as e:
             last_err = e
@@ -75,21 +79,101 @@ def _do_request(req: urllib.request.Request, timeout: int) -> urllib.response.HT
     raise last_err
 
 
-def _parse_sse_lines(lines: list[str]) -> Generator[str, None, None]:
-    """Parse SSE lines and yield content deltas."""
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith(":"):
-            continue
-        if line.startswith("data: "):
-            data = line[6:]
-            if data == "[DONE]":
-                return
-            try:
-                obj = json.loads(data)
-                yield obj
-            except json.JSONDecodeError:
+def _api_url(base_url: str, endpoint: str) -> str:
+    """Join an API base URL and a versioned endpoint without duplicating /v1."""
+    versioned_base = base_url if base_url.endswith("/v1") else f"{base_url}/v1"
+    return f"{versioned_base}/{endpoint.lstrip('/')}"
+
+
+def _iter_utf8_lines(resp: http.client.HTTPResponse) -> Iterator[str]:
+    """Yield complete UTF-8 lines from a byte stream, including the EOF tail."""
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    buffer = ""
+
+    while True:
+        chunk = resp.read(4096)
+        if not chunk:
+            buffer += decoder.decode(b"", final=True)
+            break
+
+        buffer += decoder.decode(chunk)
+        while "\n" in buffer:
+            line, buffer = buffer.split("\n", 1)
+            yield line.rstrip("\r")
+
+    if buffer:
+        yield buffer.rstrip("\r")
+
+
+_SSE_DONE = object()
+
+
+def _parse_sse_data(data: str) -> Any:
+    """Decode one SSE data field as JSON, or return the stream-end sentinel."""
+    if data.strip() == "[DONE]":
+        return _SSE_DONE
+    try:
+        obj = json.loads(data)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Invalid SSE JSON payload: {e.msg}") from e
+    if not isinstance(obj, dict):
+        raise ValueError("Invalid SSE JSON payload: expected an object")
+    return obj
+
+
+def _iter_sse_json(resp: http.client.HTTPResponse) -> Iterator[dict]:
+    """Parse an SSE byte stream and yield JSON objects from data fields."""
+    data_lines = []
+
+    for line in _iter_utf8_lines(resp):
+        if not line:
+            if not data_lines:
                 continue
+            obj = _parse_sse_data("\n".join(data_lines))
+            data_lines = []
+            if obj is _SSE_DONE:
+                return
+            yield obj
+            continue
+
+        if line.startswith(":"):
+            continue
+        if line.startswith("data:"):
+            data = line[5:]
+            if data.startswith(" "):
+                data = data[1:]
+            data_lines.append(data)
+            # Provider streams normally terminate each event with a blank
+            # line, but some compatible servers emit one complete JSON
+            # object per data line without the separator.
+            try:
+                obj = _parse_sse_data("\n".join(data_lines))
+            except ValueError:
+                continue
+            data_lines = []
+            if obj is _SSE_DONE:
+                return
+            yield obj
+
+    if data_lines:
+        obj = _parse_sse_data("\n".join(data_lines))
+        if obj is not _SSE_DONE:
+            yield obj
+
+
+def _raise_stream_error(obj: dict, provider: str) -> None:
+    """Raise a useful exception for provider error events."""
+    if "error" not in obj and obj.get("type") != "error":
+        return
+
+    error = obj.get("error")
+    if isinstance(error, dict):
+        message = error.get("message") or error.get("type") or json.dumps(error)
+    elif error:
+        message = str(error)
+    else:
+        message = "unknown streaming error"
+    raise RuntimeError(f"{provider} API stream error: {message}")
 
 
 def chat_stream(config: LLMConfig, system: str, user: str) -> Generator[str, None, None]:
@@ -132,40 +216,52 @@ def _build_openai_payload(config: LLMConfig, system: str, user: str, stream: boo
 
 
 def _stream_openai(config: LLMConfig, system: str, user: str) -> Generator[str, None, None]:
-    url = f"{config.base_url}/v1/chat/completions"
+    url = _api_url(config.base_url, "chat/completions")
     payload = _build_openai_payload(config, system, user, stream=True)
+    headers = {
+        "Content-Type": "application/json",
+    }
+    if config.api_key:
+        headers["Authorization"] = f"Bearer {config.api_key}"
     req = urllib.request.Request(
         url, data=payload, method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {config.api_key}",
-        },
+        headers=headers,
     )
     resp = _do_request(req, config.timeout)
-    buffer = ""
-    for chunk in iter(lambda: resp.read(4096), b""):
-        buffer += chunk.decode("utf-8", errors="replace")
-        while "\n" in buffer:
-            line, buffer = buffer.split("\n", 1)
-            for obj in _parse_sse_lines([line]):
-                delta = obj.get("choices", [{}])[0].get("delta", {})
-                content = delta.get("content", "")
-                if content:
-                    yield content
+    try:
+        for obj in _iter_sse_json(resp):
+            _raise_stream_error(obj, "OpenAI")
+            choices = obj.get("choices")
+            if not isinstance(choices, list) or not choices:
+                continue
+            choice = choices[0]
+            if not isinstance(choice, dict):
+                continue
+            delta = choice.get("delta", {})
+            if not isinstance(delta, dict):
+                continue
+            content = delta.get("content", "")
+            if isinstance(content, str) and content:
+                yield content
+    finally:
+        resp.close()
 
 
 def _call_openai(config: LLMConfig, system: str, user: str) -> str:
-    url = f"{config.base_url}/v1/chat/completions"
+    url = _api_url(config.base_url, "chat/completions")
     payload = _build_openai_payload(config, system, user, stream=False)
+    headers = {"Content-Type": "application/json"}
+    if config.api_key:
+        headers["Authorization"] = f"Bearer {config.api_key}"
     req = urllib.request.Request(
         url, data=payload, method="POST",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {config.api_key}",
-        },
+        headers=headers,
     )
     resp = _do_request(req, config.timeout)
-    data = json.loads(resp.read().decode("utf-8"))
+    try:
+        data = json.loads(resp.read().decode("utf-8"))
+    finally:
+        resp.close()
     return data["choices"][0]["message"]["content"]
 
 
@@ -184,7 +280,7 @@ def _build_anthropic_payload(config: LLMConfig, system: str, user: str, stream: 
 
 
 def _stream_anthropic(config: LLMConfig, system: str, user: str) -> Generator[str, None, None]:
-    url = f"{config.base_url}/v1/messages"
+    url = _api_url(config.base_url, "messages")
     payload = _build_anthropic_payload(config, system, user, stream=True)
     req = urllib.request.Request(
         url, data=payload, method="POST",
@@ -195,28 +291,23 @@ def _stream_anthropic(config: LLMConfig, system: str, user: str) -> Generator[st
         },
     )
     resp = _do_request(req, config.timeout)
-    buffer = ""
-    for chunk in iter(lambda: resp.read(4096), b""):
-        buffer += chunk.decode("utf-8", errors="replace")
-        while "\n" in buffer:
-            line, buffer = buffer.split("\n", 1)
-            line = line.strip()
-            if not line or line.startswith(":"):
+    try:
+        for obj in _iter_sse_json(resp):
+            _raise_stream_error(obj, "Anthropic")
+            if obj.get("type") != "content_block_delta":
                 continue
-            if line.startswith("data: "):
-                data = line[6:]
-                try:
-                    obj = json.loads(data)
-                    if obj.get("type") == "content_block_delta":
-                        text = obj.get("delta", {}).get("text", "")
-                        if text:
-                            yield text
-                except json.JSONDecodeError:
-                    continue
+            delta = obj.get("delta", {})
+            if not isinstance(delta, dict):
+                continue
+            text = delta.get("text", "")
+            if isinstance(text, str) and text:
+                yield text
+    finally:
+        resp.close()
 
 
 def _call_anthropic(config: LLMConfig, system: str, user: str) -> str:
-    url = f"{config.base_url}/v1/messages"
+    url = _api_url(config.base_url, "messages")
     payload = _build_anthropic_payload(config, system, user, stream=False)
     req = urllib.request.Request(
         url, data=payload, method="POST",
@@ -227,5 +318,8 @@ def _call_anthropic(config: LLMConfig, system: str, user: str) -> str:
         },
     )
     resp = _do_request(req, config.timeout)
-    data = json.loads(resp.read().decode("utf-8"))
+    try:
+        data = json.loads(resp.read().decode("utf-8"))
+    finally:
+        resp.close()
     return data["content"][0]["text"]

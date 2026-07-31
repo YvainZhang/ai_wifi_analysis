@@ -18,6 +18,8 @@ import argparse
 import json
 import os
 import sys
+import math
+from urllib.parse import urlparse
 
 from analyze import (
     apply_event_filter,
@@ -46,7 +48,10 @@ def load_config_file() -> dict:
     if os.path.isfile(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                value = json.load(f)
+                if not isinstance(value, dict):
+                    raise ValueError("配置根节点必须是 JSON 对象")
+                return value
         except (json.JSONDecodeError, OSError) as e:
             print(f"Warning: 无法读取配置文件 {CONFIG_FILE}: {e}", file=sys.stderr)
     return {}
@@ -91,6 +96,12 @@ def load_config(args) -> LLMConfig:
     # Numeric settings
     max_tokens = file_cfg.get("max_tokens", DEFAULT_CONFIG["max_tokens"])
     temperature = file_cfg.get("temperature", DEFAULT_CONFIG["temperature"])
+    if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens <= 0:
+        raise ValueError("max_tokens 必须是正整数")
+    if not isinstance(temperature, (int, float)) or isinstance(temperature, bool) or not math.isfinite(temperature) or temperature < 0:
+        raise ValueError("temperature 必须是非负有限数字")
+    if provider and provider not in ("openai", "anthropic"):
+        raise ValueError("provider 必须是 openai 或 anthropic")
 
     return LLMConfig(
         api_key=api_key,
@@ -100,6 +111,24 @@ def load_config(args) -> LLMConfig:
         max_tokens=max_tokens,
         temperature=temperature,
     )
+
+
+def is_local_endpoint(base_url):
+    """Local OpenAI-compatible servers (Ollama/vLLM) do not need a key."""
+    try:
+        return urlparse(base_url).hostname in {"localhost", "127.0.0.1", "::1"}
+    except ValueError:
+        return False
+
+
+def positive_int(value):
+    try:
+        number = int(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError("必须为正整数") from e
+    if number <= 0:
+        raise argparse.ArgumentTypeError("必须为正整数")
+    return number
 
 
 def discover_and_parse(input_path, args):
@@ -179,7 +208,7 @@ def main():
     llm_group.add_argument("--base-url", help="API 地址 (默认: https://api.openai.com)")
     llm_group.add_argument("--model", help="模型名称 (默认: gpt-4o)")
     llm_group.add_argument("--provider", choices=["openai", "anthropic"], help="API 类型 (自动检测)")
-    llm_group.add_argument("--max-tokens", type=int, help="最大输出 token 数 (默认: 8192)")
+    llm_group.add_argument("--max-tokens", type=positive_int, help="最大输出 token 数 (默认: 8192)")
 
     # Output
     out_group = parser.add_argument_group("输出控制")
@@ -204,8 +233,12 @@ def main():
     result, problem_desc = discover_and_parse(args.input, args)
     print(f"  解析完成: {result['meta']['total_packets']} 包, {result['meta']['duration']:.2f}s", file=sys.stderr)
 
-    # Step 2: Generate extracted report
-    extracted_report = generate_report(result, problem_desc=problem_desc)
+    # Step 2: Generate extracted report. The AI prompt adds the description
+    # separately, while extract-only reports remain self-contained.
+    extracted_report = generate_report(
+        result,
+        problem_desc=problem_desc if args.extract_only else None,
+    )
 
     # Extract-only mode
     if args.extract_only:
@@ -218,11 +251,15 @@ def main():
         return
 
     # Step 3: Load LLM config
-    config = load_config(args)
-    if args.max_tokens:
+    try:
+        config = load_config(args)
+    except ValueError as e:
+        print(f"Error: 配置无效: {e}", file=sys.stderr)
+        sys.exit(2)
+    if args.max_tokens is not None:
         config.max_tokens = args.max_tokens
 
-    if not config.api_key:
+    if not config.api_key and not is_local_endpoint(config.base_url):
         print("Error: 未配置 API key。请通过以下方式之一设置:", file=sys.stderr)
         print("  1. --api-key <key>", file=sys.stderr)
         print("  2. export WIFI_ANALYZER_API_KEY=<key>", file=sys.stderr)

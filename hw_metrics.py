@@ -13,7 +13,7 @@ from pcapng_parser import PcapngReader, parse_radiotap, parse_frame, DATA
 
 
 def analyze_hw_metrics(filepath, target_macs=None):
-    target_macs = set(target_macs or [])
+    target_macs = {mac.lower() for mac in (target_macs or [])}
     reader = PcapngReader(filepath)
 
     # Per-MAC signal histogram
@@ -107,12 +107,11 @@ def analyze_hw_metrics(filepath, target_macs=None):
         is_mgmt = (ftype == 0)
 
         # --- Signal per transmitter (addr2) ---
-        if sig is not None and addr2:
-            for mac in [addr2_l, addr1_l]:
-                if mac in target_macs or not target_macs:
-                    sig_hist[mac][sig] += 1
-                    sec_signal[mac][sec].append(sig)
-                    sig_window[mac][sec // 5].append(sig)
+        if sig is not None and addr2 and (
+                not target_macs or addr2_l in target_macs):
+            sig_hist[addr2_l][sig] += 1
+            sec_signal[addr2_l][sec].append(sig)
+            sig_window[addr2_l][sec // 5].append(sig)
 
             # Retry vs normal signal
             if is_data:
@@ -231,6 +230,19 @@ def print_report(results, target_macs):
     sec_signal = results['sec_signal']
     retry_sig = results['retry_sig']
     normal_sig = results['normal_sig']
+
+    target_macs = list(target_macs or [])
+    if not target_macs:
+        sender_metrics = (
+            sig_hist, sig_window, frame_sizes, antenna_data, rate_data,
+            sec_signal, retry_sig, normal_sig,
+        )
+        target_macs = sorted({
+            mac
+            for metric in sender_metrics
+            for mac in metric
+            if mac
+        })
 
     def fmt_mac(m):
         if ':' in m:
@@ -378,11 +390,11 @@ def print_report(results, target_macs):
         print(f"\n  {mac} ({'发送' if mac_l.endswith(':00') else '发送/接收'}):")
         sizes = frame_sizes[mac_l]
         total = sum(sizes.values())
-        buckets = ['<64', '64-127', '128-255', '256-511', '512-1024', '1024-1500', '>1500']
+        buckets = ['<64', '64-127', '128-255', '256-511', '512-1023', '1024-1500', '>1500']
         for b in buckets:
             c = sizes.get(b, 0)
             pct = c / total * 100 if total else 0
-            bar = '█' * max(1, int(pct / 2))
+            bar = '█' * (max(1, int(pct / 2)) if c else 0)
             print(f"    {b:>10s} B | {bar:<40s} {c:>6d} ({pct:.1f}%)")
         # Aggregation efficiency estimate
         large_pct = (sizes.get('>1500', 0) + sizes.get('1024-1500', 0)) / total * 100 if total else 0
@@ -500,7 +512,7 @@ def print_report(results, target_macs):
     total_fcs = sum(s.get('fcs_errors', 0) for s in sec_stats.values())
     total_frames = sum(s['data'] + s['ctrl'] + s['mgmt'] for s in sec_stats.values())
     if total_fcs > 0:
-        fcs_rate = total_fcs / (total_frames + total_fcs) * 100
+        fcs_rate = total_fcs / total_frames * 100 if total_frames else 0
         severity = "⚠⚠ 极高" if fcs_rate > 5 else "⚠ 较高" if fcs_rate > 1 else "轻微"
         print(f"    FCS 错误帧: {total_fcs} (错误率 {fcs_rate:.2f}% — {severity})")
         fcs_secs = [(sec, sec_stats[sec].get('fcs_errors', 0))
@@ -528,18 +540,10 @@ def print_report(results, target_macs):
         all_s = []
         for sv, cnt in hist.items():
             all_s.extend([sv] * cnt)
-        avg = statistics.mean(all_s)
         std = statistics.stdev(all_s) if len(all_s) > 1 else 0
         mn = min(hist.keys())
         mx = max(hist.keys())
         rng = mx - mn
-
-        # Most frames at minimum
-        min_pct = hist.get(mn, 0) / total * 100
-        if min_pct > 90:
-            issues.append(f"[!!] {mac}: {min_pct:.0f}% 的帧信号为最低值 {mn} dBm")
-        elif min_pct > 70:
-            issues.append(f"[!]  {mac}: {min_pct:.0f}% 的帧信号为最低值 {mn} dBm")
 
         # Signal instability
         if std > 8:

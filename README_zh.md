@@ -155,7 +155,7 @@ python3 wifi_analyzer.py <目录> --type ba
 
 | 层级 | 说明 | 关键内容 |
 |------|------|----------|
-| **L1 原始抓包** | pcapng / pcap / OmniPeek .pkt | 含 Radiotap 头（信号、噪声、信道、速率、天线） |
+| **L1 原始抓包** | pcapng / OmniPeek .pkt | 含 Radiotap 头（信号、噪声、信道、速率、天线） |
 | **L2 帧解码** | 802.11 MAC Header + Control + DHCP/TCP | Radiotap 解析、MAC 帧、BA Action、**RTS/CTS/ACK/BAR**、DHCP Deep Parse、明文 IPv4/TCP 元数据提取 |
 | **L3 数据提取** | 统一的 Result Dict | 帧统计（全子类型）、BA 事件、断连/关联、DHCP 交互、信号数据、802.11 重传统计、TCP flow 重传统计 |
 | **L4 自动检测** | `detect_*_issues()` 自动发现异常 | BA 风暴/循环、频繁断连、弱信号/高重传、DHCP NAK/多轮交互、TCP 高重传 |
@@ -229,8 +229,9 @@ wifi_analyzer.py          CLI 入口，串联整个流程
 ### 支持的抓包格式
 
 - pcapng (Wireshark, tcpdump)
-- pcap
 - OmniPeek / AiroPeek .pkt
+
+暂不直接解析 classic pcap；请先使用 Wireshark 转换为 pcapng。
 
 ## 独立使用数据提取
 

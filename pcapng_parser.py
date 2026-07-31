@@ -133,7 +133,10 @@ class PcapngReader:
                     return
 
                 if btype == SHB:
-                    pass
+                    # Interface IDs and timestamp resolutions are scoped to
+                    # one section and restart at zero after every SHB.
+                    self.interfaces = []
+                    self._ts_resolutions = []
                 elif btype == IDB:
                     self._parse_idb(body)
                 elif btype == EPB:
@@ -150,7 +153,7 @@ class PcapngReader:
     def _parse_idb(self, body):
         if len(body) < 8:
             return
-        link_type, snap_len = struct.unpack('<HI', body[:6])
+        link_type, _reserved, snap_len = struct.unpack('<HHI', body[:8])
         self.interfaces.append({'link_type': link_type, 'snap_len': snap_len})
         # Default: microseconds (10^-6)
         res = 1e6
@@ -287,6 +290,24 @@ def parse_radiotap(raw):
 # 802.11 frame parser
 # ============================================================
 
+def _data_header_layout(fc):
+    """Return ``(header_length, qos_control_offset)`` for a data frame."""
+    fsub = (fc >> 4) & 0xF
+    to_ds = bool(fc & 0x0100)
+    from_ds = bool(fc & 0x0200)
+    qos = fsub >= 0x8
+    header_len = 24
+    if to_ds and from_ds:
+        header_len += 6
+    qos_offset = None
+    if qos:
+        qos_offset = header_len
+        header_len += 2
+        # Order/HT-Control is present on QoS data when the order bit is set.
+        if fc & 0x8000:
+            header_len += 4
+    return header_len, qos_offset
+
 def parse_frame(data):
     """Parse 802.11 MAC header. Returns info dict."""
     if len(data) < 2:
@@ -341,19 +362,19 @@ def parse_frame(data):
             info['beacon_interval'] = struct.unpack('<H', data[32:34])[0]
 
     elif ftype == DATA:
-        hdr_len = 24
-        if fsub >= 0x8:  # QoS
-            hdr_len = 26
+        hdr_len, qos_offset = _data_header_layout(fc)
         if len(data) >= hdr_len:
             info['duration'] = struct.unpack('<H', data[2:4])[0]
             info['addr1'] = mac_str(data[4:10])
             info['addr2'] = mac_str(data[10:16])
             info['addr3'] = mac_str(data[16:22])
+            if to_ds and from_ds:
+                info['addr4'] = mac_str(data[24:30])
             sc = struct.unpack('<H', data[22:24])[0]
             info['seq_num'] = (sc >> 4) & 0xFFF
             info['frag_num'] = sc & 0xF
-            if fsub >= 0x8:
-                info['qos_tid'] = data[24] & 0x0F
+            if qos_offset is not None:
+                info['qos_tid'] = data[qos_offset] & 0x0F
 
     elif ftype == CTRL:
         if fsub == 0x9 and len(data) >= 16:  # Block Ack
@@ -383,14 +404,14 @@ def _parse_action(info):
 
     if body[1] == ADDBA_REQ and len(body) >= 9:
         dialog = body[2]
-        ba_param = struct.unpack('>H', body[3:5])[0]
+        ba_param = struct.unpack('<H', body[3:5])[0]
         timeout = struct.unpack('<H', body[5:7])[0]
         seq_ctrl = struct.unpack('<H', body[7:9])[0]
         info['ba'] = {
             'action': 'ADDBA Request',
             'dialog': dialog,
             'tid': (ba_param >> 2) & 0xF,
-            'bufsize': ba_param & 0x3FF,
+            'bufsize': (ba_param >> 6) & 0x3FF,
             'amsdu': bool(ba_param & 0x1),
             'policy': 'Immediate' if (ba_param >> 1) & 1 else 'Delayed',
             'timeout': timeout,
@@ -400,7 +421,7 @@ def _parse_action(info):
     elif body[1] == ADDBA_RESP and len(body) >= 9:
         dialog = body[2]
         status = struct.unpack('<H', body[3:5])[0]
-        ba_param = struct.unpack('>H', body[5:7])[0]
+        ba_param = struct.unpack('<H', body[5:7])[0]
         timeout = struct.unpack('<H', body[7:9])[0]
         info['ba'] = {
             'action': 'ADDBA Response',
@@ -408,12 +429,12 @@ def _parse_action(info):
             'status': status,
             'status_ok': status == 0,
             'tid': (ba_param >> 2) & 0xF,
-            'bufsize': ba_param & 0x3FF,
+            'bufsize': (ba_param >> 6) & 0x3FF,
             'timeout': timeout,
         }
 
     elif body[1] == DELBA and len(body) >= 6:
-        ba_param = struct.unpack('>H', body[2:4])[0]
+        ba_param = struct.unpack('<H', body[2:4])[0]
         reason = struct.unpack('<H', body[4:6])[0]
         info['ba'] = {
             'action': 'DELBA',
@@ -431,14 +452,14 @@ DHCP_DISCOVER = 1
 DHCP_OFFER = 2
 DHCP_REQUEST = 3
 DHCP_DECLINE = 4
-DHCP_NAK = 5
-DHCP_ACK = 6
+DHCP_ACK = 5
+DHCP_NAK = 6
 DHCP_RELEASE = 7
 DHCP_INFORM = 8
 
 DHCP_MSG_NAMES = {
     1: 'Discover', 2: 'Offer', 3: 'Request', 4: 'Decline',
-    5: 'NAK', 6: 'ACK', 7: 'Release', 8: 'Inform',
+    5: 'ACK', 6: 'NAK', 7: 'Release', 8: 'Inform',
 }
 
 
@@ -461,7 +482,7 @@ def _parse_dhcp_from_frame(wifi_info, wifi_raw):
     if protected:
         return None
 
-    hdr_len = 26 if fsub >= 0x8 else 24
+    hdr_len, _ = _data_header_layout(fc)
     if len(wifi_raw) < hdr_len + 8:
         return None
 
@@ -551,6 +572,7 @@ def _parse_dhcp_from_frame(wifi_info, wifi_raw):
     addr1 = wifi_info.get('addr1', '')
     addr2 = wifi_info.get('addr2', '')
     addr3 = wifi_info.get('addr3', '')
+    addr4 = wifi_info.get('addr4', '')
 
     if from_ds and not to_ds:
         # Frame from AP: SA=addr3, DA=addr1
@@ -559,6 +581,9 @@ def _parse_dhcp_from_frame(wifi_info, wifi_raw):
     elif to_ds and not from_ds:
         # Frame to AP: SA=addr2, DA=addr3
         src_mac = addr2
+        dst_mac = addr3
+    elif to_ds and from_ds:
+        src_mac = addr4 or addr2
         dst_mac = addr3
     else:
         src_mac = addr2
@@ -600,9 +625,7 @@ def _data_payload_from_frame(wifi_raw):
     if protected:
         return None
 
-    hdr_len = 26 if fsub >= 0x8 else 24
-    if to_ds and from_ds:
-        hdr_len += 6  # addr4
+    hdr_len, _ = _data_header_layout(fc)
     if len(wifi_raw) < hdr_len + 8:
         return None
     return wifi_raw[hdr_len:]
@@ -694,7 +717,7 @@ def _record_tcp_event(tcp_stats, seen_segments, tcp, max_events=50):
     flow_stats['packets'] += 1
     flow_stats['payload_bytes'] += tcp.get('payload_len', 0)
 
-    if tcp.get('payload_len', 0) <= 0:
+    if tcp.get('payload_len', 0) <= 0 or tcp.get('link_retry'):
         return False
 
     segment = (flow, tcp['seq'], tcp['payload_len'])
@@ -734,7 +757,7 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
     assoc_events = []
     dhcp_events = []
     signal_data = defaultdict(list)
-    seq_tracker = defaultdict(lambda: -1)
+    seq_tracker = {}
     retransmit_stats = defaultdict(int)
     data_timestamps = defaultdict(list)
     ctrl_stats = defaultdict(int)
@@ -765,14 +788,22 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
         if time_to is not None and ts > first_ts + time_to:
             break
 
+        interface_id = pkt['interface']
+        if interface_id >= len(reader.interfaces):
+            continue
+
+        link_type = reader.interfaces[interface_id]['link_type']
         raw = pkt['data']
-        rtap, wifi_data = parse_radiotap(raw)
+        if link_type == 127:
+            rtap, wifi_data = parse_radiotap(raw)
+        elif link_type == 105:
+            rtap, wifi_data = {}, raw
+        else:
+            continue
 
         wifi = parse_frame(wifi_data)
         if wifi is None:
             continue
-
-        total += 1
 
         # MAC filter
         addr1 = wifi.get('addr1', '')
@@ -786,6 +817,7 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
                 filtered += 1
                 continue
 
+        total += 1
         rel_ts = ts - first_ts if first_ts is not None else 0
 
         # Frame stats
@@ -823,11 +855,12 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
 
         # Implicit retransmit / seq gap detection
         if 'seq_num' in wifi and addr2 and wifi['type'] == DATA:
-            track_key = (addr2, tid if tid is not None else 0)
-            last_sn = seq_tracker[track_key]
+            track_key = (addr2, tid)
+            last_sn = seq_tracker.get(track_key)
             cur_sn = wifi['seq_num']
-            if last_sn >= 0:
-                if cur_sn < last_sn and not wifi.get('retry'):
+            if last_sn is not None and not wifi.get('retry'):
+                delta = (cur_sn - last_sn) % 4096
+                if 1 < delta < 2048:
                     implicit_retransmit[addr2] += 1
             seq_tracker[track_key] = cur_sn
 
@@ -845,6 +878,7 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
             tcp = _parse_tcp_from_frame(wifi, wifi_data)
             if tcp:
                 tcp['time'] = rel_ts
+                tcp['link_retry'] = bool(wifi.get('retry'))
                 _record_tcp_event(tcp_stats, tcp_seen_segments, tcp)
 
         # BA events

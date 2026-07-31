@@ -20,7 +20,7 @@ File format (reverse-engineered):
 
 import struct
 import os
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right, insort
 from collections import defaultdict
 from pcapng_parser import (
     parse_frame, _parse_dhcp_from_frame, _parse_tcp_from_frame,
@@ -71,6 +71,62 @@ def _parse_metadata(data, meta_start, meta_end):
     return result
 
 
+def _metadata_is_valid(data, meta_start, meta_end):
+    """Return whether a marker-delimited region looks like metadata.
+
+    Frame payloads can contain the AD marker by coincidence. Requiring a
+    complete metadata terminator and at least one timestamp field prevents
+    those payload markers from shifting record alignment.
+    """
+    if meta_end <= meta_start + 4:
+        return False
+
+    pos = meta_start + 4
+    has_timestamp = False
+    while pos + 6 <= meta_end:
+        tag = struct.unpack('<H', data[pos:pos + 2])[0]
+        if tag == 0x0015:
+            return has_timestamp
+        if tag in (0x0001, 0x0002):
+            has_timestamp = True
+        pos += 6
+    return False
+
+
+def _iter_records(data, ad_positions):
+    """Yield ``(frame_start, frame_end, metadata)`` for valid records."""
+    meta_index = 0
+    while meta_index + 1 < len(ad_positions):
+        meta_start = ad_positions[meta_index]
+        frame_marker = ad_positions[meta_index + 1]
+        if not _metadata_is_valid(data, meta_start, frame_marker):
+            meta_index += 1
+            continue
+
+        frame_start = frame_marker + 4
+        next_meta_index = meta_index + 2
+        while next_meta_index + 1 < len(ad_positions):
+            next_meta = ad_positions[next_meta_index]
+            next_frame_marker = ad_positions[next_meta_index + 1]
+            if _metadata_is_valid(data, next_meta, next_frame_marker):
+                frame_end = next_meta
+                frame_data = data[frame_start:frame_end]
+                if len(frame_data) >= 10 and parse_frame(frame_data) is not None:
+                    yield frame_start, frame_end, _parse_metadata(
+                        data, meta_start, frame_marker)
+                    meta_index = next_meta_index
+                    break
+            next_meta_index += 1
+        else:
+            # The final frame has no following metadata marker and runs to
+            # EOF.  It is still a valid record when it parses cleanly.
+            frame_data = data[frame_start:]
+            if len(frame_data) >= 10 and parse_frame(frame_data) is not None:
+                yield frame_start, len(data), _parse_metadata(
+                    data, meta_start, frame_marker)
+            meta_index += 1
+
+
 def _metadata_timestamp_seconds(meta):
     """Convert OmniPeek's nanosecond FILETIME to Unix seconds."""
     if 'ts_low' not in meta and 'ts_high' not in meta:
@@ -95,8 +151,8 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
     if len(ad_positions) < 2:
         return _empty_result(filepath, file_size)
 
-    # Odd-indexed ad markers = frame data; even-indexed = metadata
-    # Extract frames with their metadata
+    # Recover records by validating metadata boundaries rather than relying on
+    # marker parity; an AD marker may legitimately occur inside frame bytes.
     frame_stats = defaultdict(int)
     ba_events = []
     disconnect_events = []
@@ -109,7 +165,7 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
     tid_frames = defaultdict(int)
     tid_retransmit = defaultdict(int)
     implicit_retransmit = defaultdict(int)
-    seq_tracker = defaultdict(lambda: -1)
+    seq_tracker = {}
     tcp_stats = {'packets': 0, 'retransmissions': 0, 'flows': {}}
     tcp_seen_segments = set()
     filtered = 0
@@ -119,24 +175,12 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
     # Timestamps are normalized to the first valid packet timestamp.
     first_ts = None
     last_rel_ts = 0.0
+    record_count = 0
 
-    for i in range(1, len(ad_positions), 2):
-        frame_start = ad_positions[i] + 4
-        if i + 1 < len(ad_positions):
-            frame_end = ad_positions[i + 1]
-        else:
-            frame_end = file_size
-
-        if frame_end - frame_start < 4:
-            continue
-
+    for frame_start, frame_end, meta in _iter_records(data, ad_positions):
+        record_count += 1
         frame_data = data[frame_start:frame_end]
         wifi = parse_frame(frame_data)
-        if wifi is None:
-            continue
-
-        # Extract timestamp from preceding metadata (even-indexed ad)
-        meta = _parse_metadata(data, ad_positions[i - 1], ad_positions[i])
         timestamp = _metadata_timestamp_seconds(meta)
         if timestamp is not None and first_ts is None:
             first_ts = timestamp
@@ -190,11 +234,13 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
                 tid_retransmit[tid] += 1
 
         if 'seq_num' in wifi and addr2 and wifi['type'] == DATA:
-            track_key = (addr2, tid if tid is not None else 0)
-            last_sn = seq_tracker[track_key]
+            track_key = (addr2, tid)
+            last_sn = seq_tracker.get(track_key)
             cur_sn = wifi['seq_num']
-            if last_sn >= 0 and cur_sn < last_sn and not wifi.get('retry'):
-                implicit_retransmit[addr2] += 1
+            if last_sn is not None and not wifi.get('retry'):
+                delta = (cur_sn - last_sn) % 4096
+                if 1 < delta < 2048:
+                    implicit_retransmit[addr2] += 1
             seq_tracker[track_key] = cur_sn
 
         # BA events
@@ -229,6 +275,7 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
             tcp = _parse_tcp_from_frame(wifi, frame_data)
             if tcp:
                 tcp['time'] = rel_ts
+                tcp['link_retry'] = bool(wifi.get('retry'))
                 _record_tcp_event(tcp_stats, tcp_seen_segments, tcp)
 
     # Also scan raw data for DHCP (handles cases where frame parsing misses data frames)
@@ -250,7 +297,7 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
             'file_size_mb': file_size / 1024 / 1024,
             'total_packets': total_frames,
             'filtered_packets': filtered,
-            'reader_total': (len(ad_positions) - 1) // 2,
+            'reader_total': record_count,
             'duration': last_rel_ts,
             'first_ts': first_ts,
             'interfaces': [{'link_type': 105, 'snap_len': 65535}],
@@ -309,7 +356,7 @@ def _scan_raw_dhcp(data, offset_times):
         requested_ip = None
         hostname = None
         j = opt_start
-        while j < len(data) - 2:
+        while j + 1 < len(data):
             tag = data[j]
             if tag == 0:
                 j += 1
@@ -317,16 +364,19 @@ def _scan_raw_dhcp(data, offset_times):
             if tag == 255:
                 break
             opt_len = data[j + 1]
-            opt_val = data[j + 2:j + 2 + opt_len]
+            opt_end = j + 2 + opt_len
+            if opt_end > len(data):
+                break
+            opt_val = data[j + 2:opt_end]
             if tag == 53 and opt_len >= 1:
                 msg_type = opt_val[0]
             elif tag == 54 and opt_len >= 4:
                 server_id = '%d.%d.%d.%d' % tuple(opt_val[:4])
             elif tag == 50 and opt_len >= 4:
                 requested_ip = '%d.%d.%d.%d' % tuple(opt_val[:4])
-            elif tag == 12:
+            elif tag == 12 and opt_len >= 1:
                 hostname = opt_val.decode('ascii', errors='replace')
-            j += 2 + opt_len
+            j = opt_end
 
         if msg_type is None:
             continue
@@ -357,21 +407,26 @@ def _scan_raw_dhcp(data, offset_times):
 
 def _merge_dhcp_events(existing, new_events):
     """Merge raw-scanned DHCP events into existing list, avoiding duplicates."""
-    existing_offsets = set()
+    existing_offsets = []
     for e in existing:
         # Approximate offset from time
-        existing_offsets.add(e.get('offset', -1))
+        offset = e.get('offset', -1)
+        if offset >= 0:
+            insort(existing_offsets, offset)
 
     for e in new_events:
         offset = e.get('offset', 0)
-        is_dup = False
-        for eo in existing_offsets:
-            if abs(offset - eo) < 300:
-                is_dup = True
-                break
-        if not is_dup:
+        index = bisect_left(existing_offsets, offset)
+        nearby = []
+        if index:
+            nearby.append(existing_offsets[index - 1])
+        if index < len(existing_offsets):
+            nearby.append(existing_offsets[index])
+        if not any(abs(offset - eo) < 300 for eo in nearby):
             existing.append(e)
-            existing_offsets.add(offset)
+            insort(existing_offsets, offset)
+
+    existing.sort(key=lambda event: event.get('time', 0))
 
 
 def _empty_result(filepath, file_size):

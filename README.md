@@ -157,7 +157,7 @@ The analysis pipeline has 6 layers, from raw capture to root cause identificatio
 
 | Layer | Description | Key Content |
 |-------|-------------|-------------|
-| **L1 Raw Capture** | pcapng / pcap / OmniPeek .pkt | Contains Radiotap headers (signal, noise, channel, rate, antenna) |
+| **L1 Raw Capture** | pcapng / OmniPeek .pkt | Contains Radiotap headers (signal, noise, channel, rate, antenna) |
 | **L2 Frame Decode** | 802.11 MAC Header + Control + DHCP/TCP | Radiotap parsing, MAC frames, BA Action, **RTS/CTS/ACK/BAR**, DHCP Deep Parse, plain IPv4/TCP metadata extraction |
 | **L3 Data Extraction** | Unified Result Dict | Frame statistics (all subtypes), BA events, disconnect/assoc, DHCP interactions, signal data, 802.11 retransmit stats, TCP flow retransmit stats |
 | **L4 Auto Detection** | `detect_*_issues()` automatic anomaly detection | BA storm/cycle, frequent disconnection, weak signal/high retransmit, DHCP NAK/multi-round, TCP high retransmission |
@@ -231,8 +231,9 @@ wifi_analyzer.py          CLI entry point, orchestrates the entire flow
 ### Supported Capture Formats
 
 - pcapng (Wireshark, tcpdump)
-- pcap
 - OmniPeek / AiroPeek .pkt
+
+Classic pcap is not parsed directly. Convert it to pcapng with Wireshark before analysis.
 
 ## Standalone Data Extraction
 

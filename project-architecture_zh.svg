@@ -33,7 +33,7 @@
   <!-- pcapng file -->
   <g filter="url(#shadow)">
     <rect x="120" y="88" width="160" height="40" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
-    <text x="200" y="113" text-anchor="middle" font-size="13" fill="#111827">.pcapng / .pcap</text>
+    <text x="200" y="113" text-anchor="middle" font-size="13" fill="#111827">.pcapng</text>
   </g>
   <!-- OmniPeek file -->
   <g filter="url(#shadow)">
@@ -149,7 +149,7 @@
 
   <!-- analyze -> extracted -->
   <line x1="690" y1="370" x2="690" y2="395" stroke="#16a34a" stroke-width="1" stroke-dasharray="4,2"/>
-  <path d="M 690 395 L 710 395 L 710 543" stroke="#16a34a" stroke-width="1" stroke-dasharray="4,2" marker-end="url(#arrow-green)"/>
+  <path d="M 690 395 L 710 395 L 710 543" stroke="#16a34a" stroke-width="1" fill="none" stroke-dasharray="4,2" marker-end="url(#arrow-green)"/>
 
   <!-- wifi_analyzer.py orchestrator badge -->
   <g filter="url(#shadow)">
