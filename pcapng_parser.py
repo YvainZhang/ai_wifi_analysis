@@ -404,7 +404,7 @@ def _parse_action(info):
 
     if body[1] == ADDBA_REQ and len(body) >= 9:
         dialog = body[2]
-        ba_param = struct.unpack('<H', body[3:5])[0]
+        ba_param = struct.unpack('>H', body[3:5])[0]
         timeout = struct.unpack('<H', body[5:7])[0]
         seq_ctrl = struct.unpack('<H', body[7:9])[0]
         info['ba'] = {
@@ -421,7 +421,7 @@ def _parse_action(info):
     elif body[1] == ADDBA_RESP and len(body) >= 9:
         dialog = body[2]
         status = struct.unpack('<H', body[3:5])[0]
-        ba_param = struct.unpack('<H', body[5:7])[0]
+        ba_param = struct.unpack('>H', body[5:7])[0]
         timeout = struct.unpack('<H', body[7:9])[0]
         info['ba'] = {
             'action': 'ADDBA Response',
@@ -434,7 +434,7 @@ def _parse_action(info):
         }
 
     elif body[1] == DELBA and len(body) >= 6:
-        ba_param = struct.unpack('<H', body[2:4])[0]
+        ba_param = struct.unpack('>H', body[2:4])[0]
         reason = struct.unpack('<H', body[4:6])[0]
         info['ba'] = {
             'action': 'DELBA',
@@ -812,7 +812,10 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
         ta = wifi.get('ta', '')
 
         if mac_set:
-            all_macs = {addr1.lower(), addr2.lower(), ra.lower(), ta.lower()}
+            all_macs = {
+                wifi.get(name, '').lower()
+                for name in ('addr1', 'addr2', 'addr3', 'addr4', 'ra', 'ta')
+            }
             if not all_macs & mac_set:
                 filtered += 1
                 continue
@@ -856,13 +859,10 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
         # Implicit retransmit / seq gap detection
         if 'seq_num' in wifi and addr2 and wifi['type'] == DATA:
             track_key = (addr2, tid)
-            last_sn = seq_tracker.get(track_key)
-            cur_sn = wifi['seq_num']
-            if last_sn is not None and not wifi.get('retry'):
-                delta = (cur_sn - last_sn) % 4096
-                if 1 < delta < 2048:
-                    implicit_retransmit[addr2] += 1
-            seq_tracker[track_key] = cur_sn
+            current = (wifi['seq_num'], wifi.get('frag_num', 0))
+            if seq_tracker.get(track_key) == current and not wifi.get('retry'):
+                implicit_retransmit[addr2] += 1
+            seq_tracker[track_key] = current
 
         # Data flow tracking
         if wifi['type'] == DATA and addr2:
@@ -942,6 +942,9 @@ def parse_capture(filepath, mac_filter=None, time_from=None, time_to=None):
         'dhcp_events': dhcp_events,
         'signal_data': dict(signal_data),
         'retransmit_stats': dict(retransmit_stats),
+        'data_frame_counts': {
+            mac: len(timestamps) for mac, timestamps in data_timestamps.items()
+        },
         'tcp_stats': tcp_stats,
         'data_timestamps': dict(data_timestamps),
     }

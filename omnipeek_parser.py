@@ -203,7 +203,10 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
         ta = wifi.get('ta', '')
 
         if mac_set:
-            all_macs = {addr1.lower(), addr2.lower(), ra.lower(), ta.lower()}
+            all_macs = {
+                wifi.get(name, '').lower()
+                for name in ('addr1', 'addr2', 'addr3', 'addr4', 'ra', 'ta')
+            }
             if not all_macs & mac_set:
                 filtered += 1
                 continue
@@ -235,13 +238,10 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
 
         if 'seq_num' in wifi and addr2 and wifi['type'] == DATA:
             track_key = (addr2, tid)
-            last_sn = seq_tracker.get(track_key)
-            cur_sn = wifi['seq_num']
-            if last_sn is not None and not wifi.get('retry'):
-                delta = (cur_sn - last_sn) % 4096
-                if 1 < delta < 2048:
-                    implicit_retransmit[addr2] += 1
-            seq_tracker[track_key] = cur_sn
+            current = (wifi['seq_num'], wifi.get('frag_num', 0))
+            if seq_tracker.get(track_key) == current and not wifi.get('retry'):
+                implicit_retransmit[addr2] += 1
+            seq_tracker[track_key] = current
 
         # BA events
         if wifi['type'] == 0 and wifi.get('subtype') == 0xD and 'ba' in wifi:
@@ -315,6 +315,9 @@ def parse_omnipeek(filepath, mac_filter=None, time_from=None, time_to=None):
         'dhcp_events': dhcp_events,
         'signal_data': dict(signal_data),
         'retransmit_stats': dict(retransmit_stats),
+        'data_frame_counts': {
+            mac: len(timestamps) for mac, timestamps in data_timestamps.items()
+        },
         'tcp_stats': tcp_stats,
         'data_timestamps': dict(data_timestamps),
     }
@@ -443,6 +446,7 @@ def _empty_result(filepath, file_size):
         'tid_retransmit': {}, 'fcs_errors': 0, 'implicit_retransmit': {},
         'ba_events': [], 'disconnect_events': [],
         'assoc_events': [], 'dhcp_events': [], 'signal_data': {},
-        'retransmit_stats': {}, 'tcp_stats': {'packets': 0, 'retransmissions': 0, 'flows': {}},
+        'retransmit_stats': {}, 'data_frame_counts': {},
+        'tcp_stats': {'packets': 0, 'retransmissions': 0, 'flows': {}},
         'data_timestamps': {},
     }

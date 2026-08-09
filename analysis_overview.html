@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WiFi Analyzer — 分析能力全景</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700;800&display=swap');
+
+  :root {
+    --bg-deep: #080c14;
+    --bg-mid: #0d1422;
+    --bg-card: #111b2e;
+    --bg-card-hover: #162240;
+    --border: #1a2744;
+    --border-glow: #2a4a8a;
+    --text-primary: #e8edf5;
+    --text-secondary: #7a8ba8;
+    --text-dim: #4a5a78;
+    --accent-cyan: #00d4ff;
+    --accent-cyan-dim: #00d4ff22;
+    --accent-green: #00ff88;
+    --accent-green-dim: #00ff8822;
+    --accent-amber: #ffaa00;
+    --accent-amber-dim: #ffaa0022;
+    --accent-pink: #ff4488;
+    --accent-pink-dim: #ff448822;
+    --accent-purple: #aa66ff;
+    --accent-purple-dim: #aa66ff22;
+    --glow-cyan: 0 0 20px #00d4ff33, 0 0 40px #00d4ff11;
+    --glow-green: 0 0 20px #00ff8833, 0 0 40px #00ff8811;
+    --glow-amber: 0 0 20px #ffaa0033, 0 0 40px #ffaa0011;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Animated grid background */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      linear-gradient(90deg, #1a274408 1px, transparent 1px),
+      linear-gradient(#1a274408 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: gridShift 20s linear infinite;
+    z-index: 0;
+  }
+
+  @keyframes gridShift {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(60px, 60px); }
+  }
+
+  /* Radial glow behind title */
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 900px;
+    height: 600px;
+    background: radial-gradient(ellipse, #00d4ff08 0%, transparent 70%);
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .container {
+    position: relative;
+    z-index: 1;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 60px 24px 80px;
+  }
+
+  /* ── Header ── */
+  .header {
+    text-align: center;
+    margin-bottom: 72px;
+    animation: fadeInDown 0.8s ease-out;
+  }
+
+  @keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-30px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .header-badge {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--accent-cyan);
+    border: 1px solid var(--accent-cyan);
+    padding: 6px 18px;
+    border-radius: 2px;
+    margin-bottom: 24px;
+    background: var(--accent-cyan-dim);
+    position: relative;
+  }
+
+  .header-badge::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: -1px; right: -1px; bottom: -1px;
+    border-radius: 2px;
+    box-shadow: var(--glow-cyan);
+    opacity: 0.5;
+  }
+
+  .header h1 {
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #e8edf5 0%, #7a8ba8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 12px;
+  }
+
+  .header p {
+    font-size: 16px;
+    color: var(--text-secondary);
+    font-weight: 300;
+    max-width: 500px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  /* ── Flow arrows between layers ── */
+  .flow-connector {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: -8px 0;
+    position: relative;
+    z-index: 2;
+  }
+
+  .flow-connector .arrow-line {
+    width: 2px;
+    height: 32px;
+    background: linear-gradient(to bottom, var(--border-glow), var(--accent-cyan));
+    position: relative;
+  }
+
+  .flow-connector .arrow-line::after {
+    content: '';
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 8px solid var(--accent-cyan);
+    filter: drop-shadow(0 0 4px var(--accent-cyan));
+  }
+
+  .flow-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    background: var(--bg-deep);
+    padding: 4px 14px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    margin: 8px 0;
+  }
+
+  /* ── Layer sections ── */
+  .layer {
+    margin-bottom: 12px;
+    animation: fadeInUp 0.8s ease-out both;
+  }
+
+  .layer:nth-child(1) { animation-delay: 0.1s; }
+  .layer:nth-child(3) { animation-delay: 0.3s; }
+  .layer:nth-child(5) { animation-delay: 0.5s; }
+
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(40px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .layer-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .layer-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .layer-icon::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    border-radius: 10px;
+    opacity: 0.3;
+  }
+
+  .layer-title {
+    flex: 1;
+  }
+
+  .layer-title h2 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+
+  .layer-title .layer-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .layer-count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: 1px solid;
+    font-weight: 500;
+  }
+
+  /* Layer 1 — Data Extraction */
+  .layer--data .layer-icon {
+    background: var(--accent-green-dim);
+    color: var(--accent-green);
+    box-shadow: var(--glow-green);
+  }
+  .layer--data .layer-title h2 { color: var(--accent-green); }
+  .layer--data .layer-count {
+    color: var(--accent-green);
+    border-color: var(--accent-green);
+    background: var(--accent-green-dim);
+  }
+
+  /* Layer 2 — Hardware Metrics */
+  .layer--hw .layer-icon {
+    background: var(--accent-amber-dim);
+    color: var(--accent-amber);
+    box-shadow: var(--glow-amber);
+  }
+  .layer--hw .layer-title h2 { color: var(--accent-amber); }
+  .layer--hw .layer-count {
+    color: var(--accent-amber);
+    border-color: var(--accent-amber);
+    background: var(--accent-amber-dim);
+  }
+
+  /* Layer 3 — AI Analysis */
+  .layer--ai .layer-icon {
+    background: var(--accent-pink-dim);
+    color: var(--accent-pink);
+    box-shadow: 0 0 20px #ff448833;
+  }
+  .layer--ai .layer-title h2 { color: var(--accent-pink); }
+  .layer--ai .layer-count {
+    color: var(--accent-pink);
+    border-color: var(--accent-pink);
+    background: var(--accent-pink-dim);
+  }
+
+  /* ── Card grid ── */
+  .cards {
+    display: grid;
+    gap: 12px;
+  }
+
+  .cards--5 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .cards--11 { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .cards--5-ai { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 18px 16px;
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+    cursor: default;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+
+  .card:hover {
+    background: var(--bg-card-hover);
+    border-color: var(--border-glow);
+    transform: translateY(-2px);
+  }
+
+  .card:hover::before { opacity: 1; }
+
+  /* Card accent colors per layer */
+  .layer--data .card::before { background: linear-gradient(90deg, var(--accent-green), transparent); }
+  .layer--data .card:hover { box-shadow: 0 4px 24px #00ff8811; }
+
+  .layer--hw .card::before { background: linear-gradient(90deg, var(--accent-amber), transparent); }
+  .layer--hw .card:hover { box-shadow: 0 4px 24px #ffaa0011; }
+
+  .layer--ai .card::before { background: linear-gradient(90deg, var(--accent-pink), transparent); }
+  .layer--ai .card:hover { box-shadow: 0 4px 24px #ff448811; }
+
+  .card-icon {
+    font-size: 22px;
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .card-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    line-height: 1.3;
+  }
+
+  .card-desc {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    font-weight: 300;
+  }
+
+  .layer--data .card-name { color: #88ffbb; }
+  .layer--hw .card-name { color: #ffcc66; }
+  .layer--ai .card-name { color: #ff88aa; }
+
+  /* ── Tag badges inside cards ── */
+  .card-tag {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-top: 8px;
+    font-weight: 500;
+  }
+
+  .layer--data .card-tag {
+    color: var(--accent-green);
+    background: var(--accent-green-dim);
+    border: 1px solid #00ff8833;
+  }
+
+  .layer--hw .card-tag {
+    color: var(--accent-amber);
+    background: var(--accent-amber-dim);
+    border: 1px solid #ffaa0033;
+  }
+
+  .layer--ai .card-tag {
+    color: var(--accent-pink);
+    background: var(--accent-pink-dim);
+    border: 1px solid #ff448833;
+  }
+
+  /* ── Data flow diagram (SVG pipes) ── */
+  .flow-section {
+    margin: 48px 0 32px;
+    animation: fadeInUp 0.8s ease-out 0.7s both;
+  }
+
+  .flow-diagram {
+    background: var(--bg-mid);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 32px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .flow-diagram::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, #1a274406 1px, transparent 1px),
+      linear-gradient(#1a274406 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .flow-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    text-align: center;
+    margin-bottom: 28px;
+    position: relative;
+  }
+
+  .pipeline {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    flex-wrap: wrap;
+    position: relative;
+  }
+
+  .pipeline-node {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 18px;
+    text-align: center;
+    min-width: 130px;
+    position: relative;
+    transition: all 0.25s ease;
+  }
+
+  .pipeline-node:hover {
+    border-color: var(--border-glow);
+    transform: translateY(-1px);
+  }
+
+  .pipeline-node .node-name {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .pipeline-node .node-file {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .pipeline-arrow {
+    font-size: 20px;
+    color: var(--accent-cyan);
+    padding: 0 8px;
+    text-shadow: 0 0 8px var(--accent-cyan);
+    flex-shrink: 0;
+  }
+
+  .pipeline-node--input { border-color: var(--accent-cyan); }
+  .pipeline-node--input .node-name { color: var(--accent-cyan); }
+
+  .pipeline-node--parse { border-color: var(--accent-green); }
+  .pipeline-node--parse .node-name { color: var(--accent-green); }
+
+  .pipeline-node--extract { border-color: var(--accent-amber); }
+  .pipeline-node--extract .node-name { color: var(--accent-amber); }
+
+  .pipeline-node--ai { border-color: var(--accent-pink); }
+  .pipeline-node--ai .node-name { color: var(--accent-pink); }
+
+  .pipeline-node--output { border-color: var(--accent-purple); }
+  .pipeline-node--output .node-name { color: var(--accent-purple); }
+
+  /* ── Footer ── */
+  .footer {
+    margin-top: 56px;
+    text-align: center;
+    padding: 24px;
+    border-top: 1px solid var(--border);
+    animation: fadeInUp 0.8s ease-out 0.9s both;
+  }
+
+  .footer-tags {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+  }
+
+  .footer-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 5px 14px;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    background: var(--bg-card);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .footer-tag .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot--green { background: var(--accent-green); box-shadow: 0 0 6px var(--accent-green); }
+  .dot--cyan { background: var(--accent-cyan); box-shadow: 0 0 6px var(--accent-cyan); }
+  .dot--amber { background: var(--accent-amber); box-shadow: 0 0 6px var(--accent-amber); }
+
+  .footer-note {
+    font-size: 12px;
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  /* ── Scanline overlay ── */
+  .scanlines {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 999;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      #00000008 2px,
+      #00000008 4px
+    );
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 768px) {
+    .header h1 { font-size: 28px; }
+    .cards--5, .cards--11, .cards--5-ai { grid-template-columns: 1fr 1fr; }
+    .pipeline { flex-direction: column; }
+    .pipeline-arrow { transform: rotate(90deg); padding: 4px 0; }
+  }
+
+  @media (max-width: 480px) {
+    .cards--5, .cards--11, .cards--5-ai { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="scanlines"></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-badge">System Overview</div>
+    <h1>WiFi Analyzer 分析能力全景</h1>
+    <p>从原始射频信号到根因诊断，三层分析架构覆盖 WiFi 空口抓包全链路</p>
+  </header>
+
+  <!-- Layer 1: Data Extraction -->
+  <section class="layer layer--data">
+    <div class="layer-header">
+      <div class="layer-icon">⬡</div>
+      <div class="layer-title">
+        <h2>数据提取层</h2>
+        <div class="layer-sub">analyze.py &nbsp;·&nbsp; pcapng_parser.py &nbsp;·&nbsp; omnipeek_parser.py</div>
+      </div>
+      <div class="layer-count">5 维度</div>
+    </div>
+    <div class="cards cards--5">
+      <div class="card">
+        <span class="card-icon">📊</span>
+        <div class="card-name">帧统计 Frame Stats</div>
+        <div class="card-desc">数据帧 / 控制帧 / 管理帧分类计数，全局流量概览</div>
+        <span class="card-tag">type / subtype</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">⚡</span>
+        <div class="card-name">BA 事件 Block Ack</div>
+        <div class="card-desc">ADDBA / DELBA 交互追踪，风暴、抖动、循环检测</div>
+        <span class="card-tag">detect issues</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔌</span>
+        <div class="card-name">断连事件 Disconnect</div>
+        <div class="card-desc">Deauth / Disassociation 原因码解析，频繁断连告警</div>
+        <span class="card-tag">reason code</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔄</span>
+        <div class="card-name">DHCP 交互</div>
+        <div class="card-desc">Discover → Offer → Request → ACK 全流程，NAK 异常检测</div>
+        <span class="card-tag">xid tracking</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">📶</span>
+        <div class="card-name">信号与重传</div>
+        <div class="card-desc">per-MAC 信号强度时间序列、重传统计与速率分析</div>
+        <span class="card-tag">per-mac timeline</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Flow connector -->
+  <div class="flow-connector">
+    <div class="arrow-line"></div>
+    <div class="flow-label">提取数据上报</div>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- Layer 2: Hardware Metrics -->
+  <section class="layer layer--hw">
+    <div class="layer-header">
+      <div class="layer-icon">◈</div>
+      <div class="layer-title">
+        <h2>硬件指标层</h2>
+        <div class="layer-sub">hw_metrics.py &nbsp;·&nbsp; Radiotap 深度解析</div>
+      </div>
+      <div class="layer-count">11 维度</div>
+    </div>
+    <div class="cards cards--11">
+      <div class="card">
+        <span class="card-icon">🔧</span>
+        <div class="card-name">Radiotap 字段</div>
+        <div class="card-desc">字段可用性统计，确认抓包质量</div>
+        <span class="card-tag">availability</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">📉</span>
+        <div class="card-name">信号分布</div>
+        <div class="card-desc">dBm 直方图，信号强度全貌</div>
+        <span class="card-tag">histogram</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">〰️</span>
+        <div class="card-name">信号稳定性</div>
+        <div class="card-desc">5 秒窗口均值/标准差/偏移检测</div>
+        <span class="card-tag">5s window</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔈</span>
+        <div class="card-name">噪声底噪</div>
+        <div class="card-desc">噪声均值、范围、分布统计</div>
+        <span class="card-tag">noise floor</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">📐</span>
+        <div class="card-name">SNR 估算</div>
+        <div class="card-desc">信号-噪声比，解码质量评级</div>
+        <span class="card-tag">signal-noise</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔁</span>
+        <div class="card-name">重传信号对比</div>
+        <div class="card-desc">重传帧 vs 正常帧信号差异分析</div>
+        <span class="card-tag">retry correlation</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">📦</span>
+        <div class="card-name">帧大小分布</div>
+        <div class="card-desc">A-MPDU / A-MSDU 聚合效率评估</div>
+        <span class="card-tag">aggregation</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🚀</span>
+        <div class="card-name">数据速率</div>
+        <div class="card-desc">Legacy rate 字段，MCS 调制分布</div>
+        <span class="card-tag">rate dist</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">📡</span>
+        <div class="card-name">天线分布</div>
+        <div class="card-desc">天线多样性统计，MIMO 利用率</div>
+        <span class="card-tag">antenna div</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">⏱️</span>
+        <div class="card-name">每秒趋势</div>
+        <div class="card-desc">吞吐量 / 重传率逐秒变化</div>
+        <span class="card-tag">per-second</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🎯</span>
+        <div class="card-name">诊断总结</div>
+        <div class="card-desc">自动汇总硬件层异常与告警</div>
+        <span class="card-tag">auto detect</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Flow connector -->
+  <div class="flow-connector">
+    <div class="arrow-line"></div>
+    <div class="flow-label">数据 + 指标输入</div>
+    <div class="arrow-line"></div>
+  </div>
+
+  <!-- Layer 3: AI Analysis -->
+  <section class="layer layer--ai">
+    <div class="layer-header">
+      <div class="layer-icon">✦</div>
+      <div class="layer-title">
+        <h2>AI 分析层</h2>
+        <div class="layer-sub">wifi_analyzer.py &nbsp;·&nbsp; Claude Code /analyze-wifi skill</div>
+      </div>
+      <div class="layer-count">5 能力</div>
+    </div>
+    <div class="cards cards--5-ai">
+      <div class="card">
+        <span class="card-icon">📋</span>
+        <div class="card-name">帧质量评估</div>
+        <div class="card-desc">综合评估帧完整性、重传率、聚合效率</div>
+        <span class="card-tag">quality score</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔍</span>
+        <div class="card-name">协议流程分析</div>
+        <div class="card-desc">认证、关联、DHCP、BA 协议流程还原</div>
+        <span class="card-tag">protocol flow</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">⏳</span>
+        <div class="card-name">时序还原</div>
+        <div class="card-desc">事件时间线重建，关键节点定位</div>
+        <span class="card-tag">timeline</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">🔗</span>
+        <div class="card-name">因果链重建</div>
+        <div class="card-desc">从现象到根因的因果关系推导</div>
+        <span class="card-tag">root cause</span>
+      </div>
+      <div class="card">
+        <span class="card-icon">💡</span>
+        <div class="card-name">排查建议</div>
+        <div class="card-desc">针对性优化建议与下一步排查方向</div>
+        <span class="card-tag">recommendation</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pipeline flow diagram -->
+  <section class="flow-section">
+    <div class="flow-diagram">
+      <div class="flow-title">// 处理流水线</div>
+      <div class="pipeline">
+        <div class="pipeline-node pipeline-node--input">
+          <div class="node-name">抓包文件</div>
+          <div class="node-file">.pcapng / .pkt / .pcap</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node pipeline-node--parse">
+          <div class="node-name">二进制解析</div>
+          <div class="node-file">pcapng_parser / omnipeek_parser</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node pipeline-node--extract">
+          <div class="node-name">数据提取</div>
+          <div class="node-file">analyze.py + hw_metrics.py</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node pipeline-node--ai">
+          <div class="node-name">AI 分析</div>
+          <div class="node-file">LLM / Claude Code</div>
+        </div>
+        <div class="pipeline-arrow">→</div>
+        <div class="pipeline-node pipeline-node--output">
+          <div class="node-name">诊断报告</div>
+          <div class="node-file">根因 + 建议</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="footer-tags">
+      <div class="footer-tag"><span class="dot dot--green"></span>纯 Python 3.10+</div>
+      <div class="footer-tag"><span class="dot dot--cyan"></span>零外部依赖</div>
+      <div class="footer-tag"><span class="dot dot--amber"></span>pcapng · OmniPeek</div>
+    </div>
+    <div class="footer-note">WiFi Analyzer &nbsp;·&nbsp; AI 驱动的 WiFi 空口抓包分析工具</div>
+  </footer>
+
+</div>
+
+</body>
+</html>

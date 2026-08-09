@@ -4,7 +4,12 @@ import struct
 import tempfile
 import unittest
 
-from analyze import apply_event_filter, detect_capture_format, generate_report
+from analyze import (
+    apply_event_filter,
+    detect_capture_format,
+    detect_retransmit_issues,
+    generate_report,
+)
 from omnipeek_parser import AD_MARKER, _metadata_timestamp_seconds, parse_omnipeek
 from pcapng_parser import (
     PcapngReader,
@@ -147,9 +152,20 @@ class RadiotapTest(unittest.TestCase):
                 'tid_retransmit', 'fcs_errors', 'implicit_retransmit',
                 'ba_events', 'disconnect_events', 'assoc_events',
                 'dhcp_events', 'signal_data', 'retransmit_stats',
-                'tcp_stats', 'data_timestamps',
+                'data_frame_counts', 'tcp_stats', 'data_timestamps',
             },
         )
+
+    def test_retransmit_rate_uses_sender_frame_count(self):
+        issues = detect_retransmit_issues(
+            {'00:11:22:33:44:55': 10},
+            total_data_frames=1020,
+            data_frame_counts={'00:11:22:33:44:55': 20},
+        )
+
+        self.assertEqual(len(issues), 1)
+        self.assertEqual(issues[0]['severity'], 'HIGH')
+        self.assertIn('(50.0%)', issues[0]['desc'])
 
 
 class DhcpSchemaTest(unittest.TestCase):
@@ -207,6 +223,7 @@ class OmnipeekTest(unittest.TestCase):
         self.assertIn('ctrl_stats', result)
         self.assertIn('tid_frames', result)
         self.assertIn('implicit_retransmit', result)
+        self.assertEqual(result['data_frame_counts']['00:11:22:33:44:55'], 1)
 
     def test_signal_event_filter_hides_management_events(self):
         result = {

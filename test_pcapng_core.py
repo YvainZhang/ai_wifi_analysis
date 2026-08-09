@@ -32,6 +32,18 @@ def _management_frame(subtype, body=b'', duration=0):
     return header + body
 
 
+def _data_frame(seq_num, *, retry=False, wds=False):
+    fc = 0x0008 | (0x0800 if retry else 0) | (0x0300 if wds else 0)
+    header = struct.pack('<HH', fc, 0)
+    header += _mac_bytes('66:77:88:99:aa:bb')
+    header += _mac_bytes('00:11:22:33:44:55')
+    header += _mac_bytes('de:ad:be:ef:00:01')
+    header += struct.pack('<H', seq_num << 4)
+    if wds:
+        header += _mac_bytes('12:34:56:78:9a:bc')
+    return header
+
+
 def _pcapng_block(block_type, body):
     block_len = 12 + len(body)
     return (
@@ -97,7 +109,7 @@ class InterfaceDescriptionTest(unittest.TestCase):
 
 
 class BlockAckParameterTest(unittest.TestCase):
-    def test_addba_request_uses_little_endian_bit_fields(self):
+    def test_addba_request_uses_big_endian_parameter_set(self):
         parameter = _addba_parameter(
             tid=5,
             bufsize=64,
@@ -106,7 +118,8 @@ class BlockAckParameterTest(unittest.TestCase):
         )
         body = (
             bytes((CAT_BA, ADDBA_REQ, 7))
-            + struct.pack('<HHH', parameter, 25, 321 << 4)
+            + struct.pack('>H', parameter)
+            + struct.pack('<HH', 25, 321 << 4)
         )
 
         ba = parse_frame(_management_frame(0xD, body))['ba']
@@ -120,11 +133,13 @@ class BlockAckParameterTest(unittest.TestCase):
         self.assertEqual(ba['timeout'], 25)
         self.assertEqual(ba['seq_start'], 321)
 
-    def test_addba_response_uses_little_endian_bit_fields(self):
+    def test_addba_response_uses_big_endian_parameter_set(self):
         parameter = _addba_parameter(tid=9, bufsize=512)
         body = (
             bytes((CAT_BA, ADDBA_RESP, 3))
-            + struct.pack('<HHH', 37, parameter, 50)
+            + struct.pack('<H', 37)
+            + struct.pack('>H', parameter)
+            + struct.pack('<H', 50)
         )
 
         ba = parse_frame(_management_frame(0xD, body))['ba']
@@ -137,9 +152,13 @@ class BlockAckParameterTest(unittest.TestCase):
         self.assertEqual(ba['bufsize'], 512)
         self.assertEqual(ba['timeout'], 50)
 
-    def test_delba_uses_little_endian_parameter(self):
+    def test_delba_uses_big_endian_parameter_set(self):
         parameter = (11 << 12) | (1 << 11)
-        body = bytes((CAT_BA, DELBA)) + struct.pack('<HH', parameter, 39)
+        body = (
+            bytes((CAT_BA, DELBA))
+            + struct.pack('>H', parameter)
+            + struct.pack('<H', 39)
+        )
 
         ba = parse_frame(_management_frame(0xD, body))['ba']
 
@@ -213,6 +232,38 @@ class LinkTypeDispatchTest(unittest.TestCase):
         self.assertEqual(result['meta']['filtered_packets'], 1)
         self.assertEqual(result['meta']['total_packets'], 1)
         self.assertEqual(result['frame_stats']['Management'], 1)
+
+    def test_wds_addr4_participates_in_mac_filter(self):
+        capture = _build_capture([105], [(0, _data_frame(1, wds=True))])
+
+        with tempfile.NamedTemporaryFile(suffix='.pcapng', delete=False) as tmp:
+            tmp.write(capture)
+            path = tmp.name
+        try:
+            result = parse_capture(path, mac_filter=['12:34:56:78:9a:bc'])
+        finally:
+            os.unlink(path)
+
+        self.assertEqual(result['meta']['total_packets'], 1)
+        self.assertEqual(result['frame_stats']['Data'], 1)
+
+    def test_per_mac_counts_and_implicit_retransmit_semantics(self):
+        capture = _build_capture(
+            [105],
+            [
+                (0, _data_frame(10)),
+                (0, _data_frame(12)),
+                (0, _data_frame(12)),
+                (0, _data_frame(13, retry=True)),
+            ],
+        )
+
+        result = _parse_temporary_capture(capture)
+
+        sender = '00:11:22:33:44:55'
+        self.assertEqual(result['data_frame_counts'][sender], 4)
+        self.assertEqual(result['retransmit_stats'][sender], 1)
+        self.assertEqual(result['implicit_retransmit'][sender], 1)
 
     def test_new_section_resets_interface_ids(self):
         radiotap_frame = (
